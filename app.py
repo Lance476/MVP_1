@@ -25,6 +25,7 @@ from streamlit_page_analytics import StreamlitPageAnalytics
 import uuid 
 import time
 from datetime import datetime
+from streamlit_cookies_controller import CookieController
 
 from comparison_config import (
     COMPANIES,
@@ -42,10 +43,38 @@ from comparison_config import (
 warnings.filterwarnings("ignore")
 
 # ============================================================================
-# USER AND SESSION IDS
+# USER AND SESSION IDS MET COOKIE - NIEUW
 # ============================================================================
+# Cookie controller voor herkenning van terugkerende gebruikers
+try:
+    controller = CookieController()
+except Exception:
+    controller = None
+
 if "user_id" not in st.session_state:
-    st.session_state.user_id = str(uuid.uuid4())
+    if controller:
+        # Probeer bestaande cookie te lezen
+        cookie_user_id = controller.get("user_id")
+        if cookie_user_id:
+            # BESTAANDE GEBRUIKER
+            st.session_state.user_id = cookie_user_id
+            st.session_state.is_returning = True
+            st.session_state.visit_number = st.session_state.get("visit_number", 0) + 1
+        else:
+            # NIEUWE GEBRUIKER
+            new_id = str(uuid.uuid4())
+            try:
+                controller.set("user_id", new_id, max_age=365*24*60*60)  # 1 jaar
+            except Exception:
+                pass
+            st.session_state.user_id = new_id
+            st.session_state.is_returning = False
+            st.session_state.visit_number = 1
+    else:
+        # Fallback: geen cookie beschikbaar
+        st.session_state.user_id = str(uuid.uuid4())
+        st.session_state.is_returning = False
+        st.session_state.visit_number = 1
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -64,19 +93,22 @@ st.set_page_config(layout="wide", page_title="Lithium Project Comparison")
 SERPAPI_KEY = st.secrets.get("SERPAPI_KEY", "")
 
 # ============================================================================
-# GOOGLE ANALYTICS
+# GOOGLE ANALYTICS MET USER DATA - NIEUW
 # ============================================================================
 # Haal GA4 ID uit secrets (veilig!)
 GA4_ID = st.secrets.get("GA4_ID", "")
 
 # Alleen toevoegen als er een ID is ingesteld
-# NOTE: st_gtag component verwacht prop-namen: id, event_name, params
-# (zie frontend/main.js van streamlit-google-analytics-tag)
 if GA4_ID:
     st_gtag(
         id=GA4_ID,
         event_name="page_loaded",
-        params={"app_name": "Lithium_Project_Comparison"},
+        params={
+            "app_name": "Lithium_Project_Comparison",
+            "user_id": st.session_state.user_id,
+            "is_returning": str(st.session_state.is_returning),
+            "visit_number": st.session_state.visit_number
+        }
     )
 
 # ============================================================================
@@ -311,25 +343,39 @@ def fetch_google_trends_serpapi(search_terms):
 
 
 @st.cache_data(ttl=604800)
-def get_google_trends(companies=None):
-    """Get Google Trends data for the selected companies.
-
-    NOTE: This function is decorated with @st.cache_data and must NOT access
-    st.session_state — cached functions run in a separate thread on Streamlit
-    Cloud where session_state is unavailable. The @st.cache_data TTL handles
-    refresh.
-    """
-    if companies is None:
-        companies = list(COMPANIES.keys())
-
-    search_terms = company_search_terms(companies)
-
-    if SERPAPI_KEY and search_terms:
-        data = fetch_google_trends_serpapi(search_terms)
+def fetch_single_company_trends(company):
+    """Fetch Google Trends for ONE company (cached individually)."""
+    search_term = COMPANIES[company]['search_term']
+    
+    if SERPAPI_KEY and search_term:
+        data = fetch_google_trends_serpapi([search_term])
         if data is not None and not data.empty:
             return data
     return None
 
+def get_google_trends(companies=None):
+    """Get Google Trends data by combining per-company cached data."""
+    if companies is None:
+        companies = list(COMPANIES.keys())
+    
+    all_data = []
+    for company in companies:
+        data = fetch_single_company_trends(company)  # Each company uses its own cache!
+        if data is not None and not data.empty:
+            all_data.append(data)
+    
+    if not all_data:
+        return None
+    
+    # Combine all company data into one DataFrame
+    # Your existing fetch_google_trends_serpapi returns a pivot table
+    # So we need to merge them properly
+    combined = all_data[0]  # Start with first
+    for df in all_data[1:]:
+        # Merge on 'date' column (assuming both have 'date')
+        combined = pd.merge(combined, df, on='date', how='outer')
+    
+    return combined.sort_values('date').reset_index(drop=True)
 
 # ============================================================================
 # DASHBOARD METRICS
