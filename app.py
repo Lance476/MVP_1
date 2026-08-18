@@ -2275,7 +2275,8 @@ def render_timeline(companies=None):
                         x=study_events['Date'],
                         y=[study] * len(study_events),
                         mode='lines',
-                        line=dict(color=color, width=2, opacity=0.4),
+                        line=dict(color=color, width=2),
+                        opacity=0.4,
                         hoverinfo='skip',
                         showlegend=False,
                     ))
