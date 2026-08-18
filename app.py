@@ -41,7 +41,7 @@ from comparison_config import (
 
 warnings.filterwarnings("ignore")
 
-# ============================================================================
+# ======================================
 # USER AND SESSION IDS
 # ============================================================================
 if "user_id" not in st.session_state:
@@ -2581,4 +2581,4 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     render_qa_section()
 
-# python -m streamlit run app.py
+# python -m streamlit run app.py```
