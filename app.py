@@ -20,6 +20,14 @@ import plotly.graph_objects as go
 import warnings
 import re
 from streamlit_gtag import st_gtag
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import requests
+import plotly.graph_objects as go
+import warnings
+import re
+from streamlit_gtag import st_gtag
 import streamlit as st
 from streamlit_page_analytics import StreamlitPageAnalytics
 import uuid 
@@ -2581,4 +2589,4 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     render_qa_section()
 
-# python -m streamlit run app.py```
+# python -m streamlit run app.py

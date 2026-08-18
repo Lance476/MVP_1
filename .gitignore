@@ -10,3 +10,4 @@ venv/
 desktop.ini
 .vscode/
 .idea/
+.aider*
