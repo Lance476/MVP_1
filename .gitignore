@@ -1,0 +1,12 @@
+.streamlit/secrets.toml
+.streamlit/analytics.toml
+Annual_Financials.csv
+Stock_Daily_Combined.csv
+analytics.json
+__pycache__/
+*.pyc
+venv/
+.DS_Store
+desktop.ini
+.vscode/
+.idea/

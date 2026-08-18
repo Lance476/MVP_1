@@ -1,0 +1,11 @@
+streamlit
+yfinance
+pandas
+numpy
+altair
+requests
+plotly
+streamlit-google-analytics-tag
+git+https://github.com/Snowflake-Labs/streamlit-page-analytics@v0.0.2
+
+
