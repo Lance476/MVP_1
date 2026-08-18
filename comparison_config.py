@@ -8,7 +8,7 @@
 # ============================================================================
 # Central source of truth for all companies in the comparison platform.
 # Each entry maps a display name to its identifiers for every data source:
-#   - financial_id: Identifier for financials CSV
+#   - gvkey:       Compustat identifier (financials CSV)
 #   - yf_ticker:   Yahoo Finance ticker (stock data)
 #   - search_term: Google Trends search term (SerpApi)
 #
@@ -19,49 +19,49 @@
 
 COMPANIES = {
     "Century Lithium Corp": {
-        "financial_id": 106098,
+        "gvkey": 106098,
         "yf_ticker": "LCE.V",
         "search_term": "Century Lithium",
         "short_name": "Century",
         "color": "#2E86C1",
     },
     "American Battery Technology": {
-        "financial_id": 26366,
+        "gvkey": 26366,
         "yf_ticker": "ABAT",
         "search_term": "American Battery Technology",
         "short_name": "ABTC",
         "color": "#F39C12",
     },
     "Ioneer Ltd": {
-        "financial_id": 290341,
+        "gvkey": 290341,
         "yf_ticker": "IONR",
         "search_term": "Ioneer",
         "short_name": "Ioneer",
         "color": "#27AE60",
     },
     "Lithium Americas Corp": {
-        "financial_id": 43404,
+        "gvkey": 43404,
         "yf_ticker": "LAC",
         "search_term": "Lithium Americas",
         "short_name": "LAC",
         "color": "#8E44AD",
     },
     "Surge Battery Metals Inc": {
-        "financial_id": 106045,
+        "gvkey": 106045,
         "yf_ticker": "NILI.V",
         "search_term": "Surge Battery Metals",
         "short_name": "Surge",
         "color": "#E67E22",
     },
     "Noram Lithium Corp": {
-        "financial_id": 187729,
+        "gvkey": 187729,
         "yf_ticker": "NRM.V",
         "search_term": "Noram Lithium",
         "short_name": "Noram",
         "color": "#16A085",
     },
     "American Lithium Corp": {
-        "financial_id": 107393,
+        "gvkey": 107393,
         "yf_ticker": "LI",
         "search_term": "American Lithium",
         "short_name": "ALC",
@@ -127,7 +127,7 @@ STUDY_COLUMNS = [
 
 STUDY_DATA = {
     # ------------------------------------------------------------------
-    # Angel Island — Century Lithium Corp (ID 106098)
+    # Angel Island — Century Lithium Corp (gvkey 106098)
     # ------------------------------------------------------------------
     "Century Lithium Corp": {
         "Stage": ["MRE", "PEA", "PFS", "FS", "FS_U"],
@@ -156,7 +156,7 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # Tonopah Flats — American Battery Technology Co (ID 26366)
+    # Tonopah Flats — American Battery Technology Co (gvkey 26366)
     # ------------------------------------------------------------------
     "American Battery Technology": {
         "Stage": ["MRE", "PEA", "PEA_U", "PFS"],
@@ -184,7 +184,7 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # Rhyolite Ridge — Ioneer Ltd (ID 290341)
+    # Rhyolite Ridge — Ioneer Ltd (gvkey 290341)
     # ------------------------------------------------------------------
     "Ioneer Ltd": {
         "Stage": ["PFS", "FS", "MRE_U", "Fully_Permitted", "FID", "FS_U"],
@@ -214,7 +214,7 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # Thacker Pass — Lithium Americas Corp (ID 43404)
+    # Thacker Pass — Lithium Americas Corp (gvkey 43404)
     # ------------------------------------------------------------------
     "Lithium Americas Corp": {
         "Stage": ["MRE_U", "PFS", "Fully_Permitted", "FS", "FS_U"],
@@ -243,7 +243,7 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # Keystone — Surge Battery Metals Inc (ID 106045)
+    # Keystone — Surge Battery Metals Inc (gvkey 106045)
     # ------------------------------------------------------------------
     "Surge Battery Metals Inc": {
         "Stage": ["MRE", "MRE_U", "PEA"],
@@ -270,7 +270,7 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # Zeus — Noram Lithium Corp (ID 187729)
+    # Zeus — Noram Lithium Corp (gvkey 187729)
     # ------------------------------------------------------------------
     "Noram Lithium Corp": {
         "Stage": ["MRE", "MRE_U", "PEA", "MRE_U2", "MRE_U3"],
@@ -299,7 +299,7 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # TLC — American Lithium Corp (ID 107393)
+    # TLC — American Lithium Corp (gvkey 107393)
     # ------------------------------------------------------------------
     "American Lithium Corp": {
         "Stage": ["MRE", "MRE_U", "PEA"],
@@ -329,7 +329,7 @@ STUDY_DATA = {
 # ============================================================================
 # HISTORICAL MARKET DATA OVERRIDES
 # ============================================================================
-# Some companies (e.g. LAC) have stock data that only begins after a
+# Some companies (e.g. LAC) have Compustat stock data that only begins after a
 # corporate event (LAC's Oct-2023 split), so earlier study dates have no
 # price × shares record in Stock_Daily_Combined.csv. Provide the market data
 # manually here, keyed by (company display name, study Stage_Display).
