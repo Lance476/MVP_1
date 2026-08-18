@@ -2488,66 +2488,66 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     # SECTION 6: SENTIMENT ANALYSIS
     # ============================================================================
-    st.subheader("Sentiment Analysis - Press Releases & Interviews Over Time")
-    st.caption("Analysis of sentiment in press releases, interviews, and management communications over time")
+    with st.expander("Sentiment Analysis - Press Releases & Interviews Over Time", expanded=False):
+        st.caption("Analysis of sentiment in press releases, interviews, and management communications over time")
 
-    if not is_compare:
-        # Press release dates from the past year (Century Lithium; MVP placeholder)
-        press_release_dates = [
-            "July 24, 2025",
-            "August 6, 2025",
-            "August 22, 2025",
-            "August 29, 2025",
-            "September 18, 2025",
-            "September 22, 2025",
-            "October 1, 2025",
-            "October 17, 2025",
-            "October 20, 2025",
-            "October 27, 2025",
-            "November 24, 2025",
-            "November 25, 2025",
-            "December 2, 2025",
-            "December 11, 2025",
-            "December 22, 2025",
-            "January 14, 2026",
-            "February 23, 2026",
-            "March 9, 2026",
-            "March 10, 2026",
-            "March 11, 2026",
-            "March 16, 2026",
-            "March 23, 2026",
-            "April 9, 2026",
-            "April 23, 2026",
-            "May 4, 2026",
-            "May 5, 2026",
-            "July 14, 2026",
-            "July 15, 2026",
-        ]
+        if not is_compare:
+            # Press release dates from the past year (Century Lithium; MVP placeholder)
+            press_release_dates = [
+                "July 24, 2025",
+                "August 6, 2025",
+                "August 22, 2025",
+                "August 29, 2025",
+                "September 18, 2025",
+                "September 22, 2025",
+                "October 1, 2025",
+                "October 17, 2025",
+                "October 20, 2025",
+                "October 27, 2025",
+                "November 24, 2025",
+                "November 25, 2025",
+                "December 2, 2025",
+                "December 11, 2025",
+                "December 22, 2025",
+                "January 14, 2026",
+                "February 23, 2026",
+                "March 9, 2026",
+                "March 10, 2026",
+                "March 11, 2026",
+                "March 16, 2026",
+                "March 23, 2026",
+                "April 9, 2026",
+                "April 23, 2026",
+                "May 4, 2026",
+                "May 5, 2026",
+                "July 14, 2026",
+                "July 15, 2026",
+            ]
 
-        sentiment_df = pd.DataFrame({
-            "Date": pd.to_datetime(press_release_dates),
-            "Press Release / Event": [f"PR #{i+1}" for i in range(len(press_release_dates))],
-            "Sentiment Score": ["Pending"] * len(press_release_dates),
-            "Sentiment Label": ["—"] * len(press_release_dates),
-        })
-        sentiment_df["Date"] = sentiment_df["Date"].dt.strftime("%B %d, %Y")
+            sentiment_df = pd.DataFrame({
+                "Date": pd.to_datetime(press_release_dates),
+                "Press Release / Event": [f"PR #{i+1}" for i in range(len(press_release_dates))],
+                "Sentiment Score": ["Pending"] * len(press_release_dates),
+                "Sentiment Label": ["—"] * len(press_release_dates),
+            })
+            sentiment_df["Date"] = sentiment_df["Date"].dt.strftime("%B %d, %Y")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Sentiment Score Over Time")
-            st.dataframe(
-                sentiment_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Date": st.column_config.TextColumn("Date", width="medium"),
-                    "Press Release / Event": st.column_config.TextColumn("Press Release / Event", width="medium"),
-                    "Sentiment Score": st.column_config.TextColumn("Sentiment Score", width="small"),
-                    "Sentiment Label": st.column_config.TextColumn("Sentiment Label", width="small"),
-                },
-            )
-    else:
-        st.caption("Sentiment analysis per company to be added for comparison mode.")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Sentiment Score Over Time")
+                st.dataframe(
+                    sentiment_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Date": st.column_config.TextColumn("Date", width="medium"),
+                        "Press Release / Event": st.column_config.TextColumn("Press Release / Event", width="medium"),
+                        "Sentiment Score": st.column_config.TextColumn("Sentiment Score", width="small"),
+                        "Sentiment Label": st.column_config.TextColumn("Sentiment Label", width="small"),
+                    },
+                )
+        else:
+            st.caption("Sentiment analysis per company to be added for comparison mode.")
     st.divider()
 
     # ============================================================================
