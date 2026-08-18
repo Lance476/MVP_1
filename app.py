@@ -20,14 +20,6 @@ import plotly.graph_objects as go
 import warnings
 import re
 from streamlit_gtag import st_gtag
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import requests
-import plotly.graph_objects as go
-import warnings
-import re
-from streamlit_gtag import st_gtag
 import streamlit as st
 from streamlit_page_analytics import StreamlitPageAnalytics
 import uuid 
@@ -594,10 +586,14 @@ def get_market_cap_data(companies=None):
 
         results = []
         for company in companies:
-            financial_id = COMPANIES[company]['financial_id']
+            # Use .get() to avoid KeyError if a company entry is missing 'financial_id'
+            financial_id = COMPANIES.get(company, {}).get('financial_id')
+            if financial_id is None:
+                continue
             company_stock = stock[stock['gvkey'] == financial_id].copy()
             if company_stock.empty:
                 continue
+
 
             company_stock['datadate'] = pd.to_datetime(company_stock['datadate'])
             company_stock = company_stock.sort_values('datadate').reset_index(drop=True)
@@ -689,6 +685,7 @@ def render_project_studies(companies=None):
                     mc_data[['Stage_Display', 'MarketCap_M', 'Shares_M', 'Stock_Price']],
                     on='Stage_Display', how='inner'
                 ).dropna(subset=['MarketCap_M'])
+
 
                 if not merged.empty:
                     # Bereken ratio's
@@ -1605,12 +1602,17 @@ def build_company_financials(company, annual, stock):
     Returns (cash_flow_df, market_cap_df, financial_df) or (None, None, None)
     on missing data.
     """
-    financial_id = COMPANIES[company]['financial_id']
+    # Use .get() to avoid KeyError if a company entry is missing 'financial_id'
+    # (e.g. an older comparison_config.py deployed on Streamlit Cloud).
+    financial_id = COMPANIES.get(company, {}).get('financial_id')
+    if financial_id is None:
+        return None, None, None
     company_annual = annual[annual['gvkey'] == financial_id].copy()
     company_stock = stock[stock['gvkey'] == financial_id].copy()
 
     if company_annual.empty or company_stock.empty:
         return None, None, None
+
 
     company_annual['datadate'] = pd.to_datetime(company_annual['datadate'])
     company_annual = company_annual.sort_values('datadate').reset_index(drop=True)
