@@ -6,6 +6,7 @@ altair
 requests
 plotly
 streamlit-google-analytics-tag
+streamlit-cookies-controller
 git+https://github.com/Snowflake-Labs/streamlit-page-analytics@v0.0.2
 
 

@@ -85,8 +85,145 @@ if "session_start_time" not in st.session_state:
 # ============================================================================
 # PAGE CONFIG
 # ============================================================================
-st.set_page_config(layout="wide", page_title="Lithium Project Comparison")
+st.set_page_config(
+    layout="wide", 
+    page_title="Lithium Project Comparison",
+    page_icon="⚡",
+    initial_sidebar_state="expanded"
+)
 
+# Custom CSS to remove visual clutter and create a cleaner look
+st.markdown("""
+<style>
+    /* Remove default Streamlit padding and margins */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 0rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+        max-width: 100%;
+    }
+    
+    /* Remove the default divider lines */
+    hr {
+        margin: 0.5rem 0 !important;
+        opacity: 0.3 !important;
+    }
+    
+    /* Make headers more compact */
+    h1, h2, h3, h4, h5, h6 {
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.5rem !important;
+        font-weight: 600 !important;
+        color: #1a1a2e !important;
+    }
+    
+    h1 {
+        font-size: 28px !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    h2 {
+        font-size: 20px !important;
+        margin-top: 1rem !important;
+    }
+    
+    h3 {
+        font-size: 17px !important;
+        margin-top: 0.75rem !important;
+    }
+    
+    /* Remove extra spacing around subheaders */
+    .stSubheader {
+        margin-top: 0.25rem !important;
+        margin-bottom: 0.25rem !important;
+        font-size: 18px !important;
+    }
+    
+    /* Clean up metric cards */
+    [data-testid="metric-container"] {
+        background: transparent !important;
+        padding: 0.5rem 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* Reduce spacing between columns */
+    .row-widget.stColumns {
+        gap: 0.5rem !important;
+    }
+    
+    /* Make dataframes more compact */
+    .stDataFrame {
+        border: none !important;
+    }
+    
+    .stDataFrame table {
+        font-size: 13px !important;
+    }
+    
+    /* Reduce spacing in expanders */
+    .streamlit-expanderHeader {
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        padding: 0.5rem 0 !important;
+    }
+    
+    .streamlit-expanderContent {
+        padding-top: 0.5rem !important;
+    }
+    
+    /* Clean up sidebar */
+    .css-1d391kg {
+        padding-top: 1rem !important;
+    }
+    
+    /* Remove extra spacing around tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.25rem 0.5rem !important;
+        font-size: 14px !important;
+    }
+    
+    /* More compact info/warning boxes */
+    .stAlert {
+        padding: 0.5rem 1rem !important;
+        margin-bottom: 0.5rem !important;
+        font-size: 13px !important;
+    }
+    
+    /* Reduce padding in columns */
+    .css-1r6slb0 {
+        padding: 0 !important;
+    }
+    
+    /* Clean up select boxes */
+    .stSelectbox label {
+        font-size: 13px !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Compact radio buttons */
+    .stRadio label {
+        font-size: 13px !important;
+    }
+    
+    /* Remove extra spacing in dividers */
+    .element-container:has(hr) {
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Make captions smaller */
+    .stCaption {
+        font-size: 12px !important;
+        color: #888 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 # ============================================================================
 # SERPAPI CONFIG
 # ============================================================================
@@ -115,25 +252,16 @@ if GA4_ID:
 # SIDEBAR NAVIGATION
 # ============================================================================
 def render_sidebar():
-    """Sidebar: choose Single Company or Compare mode + company selection.
-
-    Returns
-    -------
-    view_mode : str
-        "Single Company" or "Compare Companies"
-    selected : list[str]
-        List of company display names selected for the current view
-    """
+    """Sidebar: choose Single Company or Compare mode + company selection."""
     with st.sidebar:
-        st.title("Navigation")
-
+        st.markdown("### Navigation")
+        
+        # Use a cleaner style without extra boxes
         view_mode = st.radio(
             "View Mode",
             ["Single Company", "Compare Companies"],
-            help=(
-                "Single: full deep-dive on one company. "
-                "Compare: side-by-side comparison of multiple companies."
-            ),
+            help="Single: deep-dive on one company. Compare: side-by-side comparison.",
+            label_visibility="collapsed"
         )
 
         if view_mode == "Single Company":
@@ -141,6 +269,7 @@ def render_sidebar():
                 "Select Company",
                 list(COMPANIES.keys()),
                 index=list(COMPANIES.keys()).index(DEFAULT_COMPANY),
+                label_visibility="collapsed"
             )
             selected = [company]
         else:
@@ -148,16 +277,16 @@ def render_sidebar():
                 "Select Companies to Compare",
                 list(COMPANIES.keys()),
                 default=[DEFAULT_COMPANY, "Ioneer Ltd", "Lithium Americas Corp"],
-                help="Pick 2 or more companies to compare side-by-side.",
+                help="Pick 2 or more companies to compare.",
+                label_visibility="collapsed"
             )
             if len(selected) < 2:
-                st.warning("Select at least 2 companies to compare.")
+                st.warning("Select at least 2 companies.")
 
-        st.divider()
-        st.caption("MVP Demo — data may be inaccurate. Not financial advice.")
+        st.markdown("")
+        st.caption("MVP Demo — Not financial advice.")
 
         return view_mode, selected
-
 
 # ============================================================================
 # DATA HELPERS
@@ -1300,48 +1429,187 @@ def render_dashboard(companies=None):
         cols = st.columns(len(company_metrics))
         for col, (company, m) in zip(cols, company_metrics.items()):
             with col:
-                st.markdown(f"**{company}**")
-                st.metric(
-                    f"Price ({COMPANIES[company]['yf_ticker']})",
-                    f"${m['current']:.2f}",
-                    f"{m['return_30d']:.1f}% (30d)"
-                )
-                if m.get('volume_change') is not None:
-                    st.caption(f"Volume (30d): **{m['volume_change']:+.1f}%** vs prior 30d")
-                if m.get('search_current') is not None:
-                    st.caption(f"Search interest: **{m['search_current']:.0f}**"
-                               f" ({m['search_change']:+.0f} 30d)")
+                color = COMPANIES[company]['color']
+                
+                # Company name and ticker
+                st.markdown(f"""
+                <div style='
+                    font-weight: 500;
+                    font-size: 14px;
+                    color: #1a1a2e;
+                    margin-bottom: 2px;
+                '>{company}</div>
+                <div style='
+                    font-size: 11px;
+                    color: #999;
+                    margin-bottom: 8px;
+                '>{COMPANIES[company]['yf_ticker']}</div>
+                """, unsafe_allow_html=True)
+                
+                # Price and return on same line - more compact
+                price_color = "#27AE60" if m['return_30d'] >= 0 else "#E74C3C"
+                st.markdown(f"""
+                <div style='
+                    display: flex;
+                    align-items: baseline;
+                    gap: 10px;
+                    margin-bottom: 8px;
+                '>
+                    <span style='
+                        font-size: 22px;
+                        font-weight: 600;
+                        color: #1a1a2e;
+                        letter-spacing: -0.5px;
+                    '>${m['current']:.2f}</span>
+                    <span style='
+                        font-size: 13px;
+                        color: {price_color};
+                        font-weight: 500;
+                    '>{m['return_30d']:+.1f}%</span>
+                    <span style='
+                        font-size: 10px;
+                        color: #bbb;
+                        font-weight: 400;
+                    '>30d</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Volume and Search on same line - clean and compact
+                vol_change = m.get('volume_change', 0)
+                vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
+                search_change = m.get('search_change', 0)
+                search_color = "#27AE60" if search_change >= 0 else "#E74C3C"
+                search_current = m.get('search_current', 0)
+                
+                st.markdown(f"""
+                <div style='
+                    display: flex;
+                    gap: 16px;
+                    font-size: 12px;
+                    color: #777;
+                    padding-top: 6px;
+                    border-top: 1px solid #f0f0f0;
+                '>
+                    <span>Vol <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
+                    <span>Search <span style='font-weight: 500; color: #1a1a2e;'>{search_current:.0f}</span> <span style='color: {search_color};'>({search_change:+.0f})</span></span>
+                </div>
+                """, unsafe_allow_html=True)
     else:
-        # Single company: show company metrics + LIT benchmark side by side
+        # Single company
         company = list(company_metrics.keys())[0]
         m = company_metrics[company]
-
-        col1, col2 = st.columns(2)
-
+        
+        # Two columns with tighter spacing
+        col1, col2 = st.columns([1, 1])
+        
         with col1:
-            st.metric(
-                f"{company} ({COMPANIES[company]['yf_ticker']})",
-                f"${m['current']:.2f}",
-                f"{m['return_30d']:.1f}% (30d)"
-            )
-            if m.get('volume_change') is not None:
-                st.caption(
-                    f"Volume (30d): **{m['volume_change']:+.1f}%** vs prior 30d"
-                )
-            if m.get('search_current') is not None:
-                st.caption(
-                    f"Search interest: **{m['search_current']:.0f}**"
-                    f" ({m['search_change']:+.0f} 30d)"
-                )
-
+            color = COMPANIES[company]['color']
+            
+            # Company header - smaller and cleaner
+            st.markdown(f"""
+            <div style='
+                font-weight: 500;
+                font-size: 14px;
+                color: #1a1a2e;
+                margin-bottom: 2px;
+            '>{company}</div>
+            <div style='
+                font-size: 11px;
+                color: #999;
+                margin-bottom: 6px;
+            '>{COMPANIES[company]['yf_ticker']}</div>
+            """, unsafe_allow_html=True)
+            
+            # Price and return - smaller, more refined
+            price_color = "#27AE60" if m['return_30d'] >= 0 else "#E74C3C"
+            st.markdown(f"""
+            <div style='
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                margin-bottom: 6px;
+            '>
+                <span style='
+                    font-size: 24px;
+                    font-weight: 600;
+                    color: #1a1a2e;
+                    letter-spacing: -0.5px;
+                '>${m['current']:.2f}</span>
+                <span style='
+                    font-size: 14px;
+                    color: {price_color};
+                    font-weight: 500;
+                '>{m['return_30d']:+.1f}%</span>
+                <span style='
+                    font-size: 10px;
+                    color: #bbb;
+                    font-weight: 400;
+                '>30d</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Volume and Search - clean and compact
+            vol_change = m.get('volume_change', 0)
+            vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
+            search_change = m.get('search_change', 0)
+            search_color = "#27AE60" if search_change >= 0 else "#E74C3C"
+            search_current = m.get('search_current', 0)
+            
+            st.markdown(f"""
+            <div style='
+                display: flex;
+                gap: 20px;
+                font-size: 12px;
+                color: #777;
+                padding-top: 6px;
+                border-top: 1px solid #f0f0f0;
+            '>
+                <span>Volume <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
+                <span>Search <span style='font-weight: 500; color: #1a1a2e;'>{search_current:.0f}</span> <span style='color: {search_color};'>({search_change:+.0f})</span></span>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with col2:
             if '_lit_benchmark' in metrics:
                 lit = metrics['_lit_benchmark']
-                st.metric(
-                    LIT_LABEL,
-                    f"${lit['current']:.2f}",
-                    f"{lit['return_30d']:.1f}% (30d)"
-                )
+                lit_return_color = "#27AE60" if lit['return_30d'] >= 0 else "#E74C3C"
+                
+                st.markdown(f"""
+                <div style='
+                    font-weight: 500;
+                    font-size: 14px;
+                    color: #1a1a2e;
+                    margin-bottom: 2px;
+                '>Sprott Lithium Miners ETF</div>
+                <div style='
+                    font-size: 11px;
+                    color: #999;
+                    margin-bottom: 6px;
+                '>LITP</div>
+                <div style='
+                    display: flex;
+                    align-items: baseline;
+                    gap: 10px;
+                    margin-bottom: 6px;
+                '>
+                    <span style='
+                        font-size: 24px;
+                        font-weight: 600;
+                        color: #1a1a2e;
+                        letter-spacing: -0.5px;
+                    '>${lit['current']:.2f}</span>
+                    <span style='
+                        font-size: 14px;
+                        color: {lit_return_color};
+                        font-weight: 500;
+                    '>{lit['return_30d']:+.1f}%</span>
+                    <span style='
+                        font-size: 10px;
+                        color: #bbb;
+                        font-weight: 400;
+                    '>30d</span>
+                </div>
+                """, unsafe_allow_html=True)
             else:
                 st.caption("No LIT benchmark data available")
 
@@ -1535,7 +1803,7 @@ def render_news_section(companies=None):
 
                 st.markdown(f"• **[{title}]({link})** — *{publisher}*")
                 st.markdown("")
-        st.divider()
+        st.markdown("")
 
 
 # ============================================================================
@@ -1602,7 +1870,7 @@ def render_qa_section():
                 st.session_state.qa[i]["answer"] = answer
                 st.rerun()
 
-        st.divider()
+        st.markdown("")
 
 
 # ============================================================================
@@ -2213,18 +2481,10 @@ def render_timeline(companies=None):
     st.dataframe(timeline_df[present_cols], use_container_width=True, hide_index=True)
 
     # ------------------------------------------------------------------
-    # Build long-format event data for the chart (Commitment / Expected / Actual)
+    # Build long-format event data for the chart
     # ------------------------------------------------------------------
     def parse_timeline_date(date_str):
-        """Parse timeline date strings into datetime objects.
-
-        Handles:
-          - 'DD-MM-YYYY'              e.g. '07-02-2018'
-          - 'Late <Month> <Year>'     e.g. 'Late July 2018'   → end of month
-          - 'Q<N> <Year>'             e.g. 'Q1 2019'          → end of quarter
-          - 'Late <Year>' / '<Year>'  e.g. 'Late 2022'        → end of year
-          - '—' / '' / None → None
-        """
+        """Parse timeline date strings into datetime objects."""
         if date_str is None or date_str == '—' or date_str == '':
             return None
 
@@ -2240,7 +2500,7 @@ def render_timeline(companies=None):
 
         s_lower = s.lower()
 
-        # Standard datetime parse (e.g. '2018-02-07')
+        # Standard datetime parse
         try:
             return pd.to_datetime(s)
         except Exception:
@@ -2254,7 +2514,7 @@ def render_timeline(companies=None):
                 if m:
                     return pd.to_datetime(f"{m.group(1)}-{month:02d}-{day}")
 
-        # 'Late <Month> <Year>' → end of month approximation
+        # 'Late <Month> <Year>' → end of month
         month_map = {
             'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
             'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
@@ -2274,119 +2534,246 @@ def render_timeline(companies=None):
 
         return None
 
-    # Collect all three event types per study
-    event_types = ['Commitment', 'Expected', 'Actual']
+    # Collect all events
     event_rows = []
     for company in companies:
         rows = TIMELINE_DATA.get(company, [])
         for row in rows:
             study = row.get('Study', '')
-            for event in event_types:
-                date_str = row.get(f'{event} date', '—')
+            
+            # Define event types and their display names
+            event_mappings = {
+                'Commitment date': ('Commitment', '📅 Commitment'),
+                'Expected date': ('Expected', '⏳ Expected'),
+                'Actual date': ('Actual', '✅ Actual'),
+            }
+            
+            for date_key, (event_type, display_name) in event_mappings.items():
+                date_str = row.get(date_key, '—')
                 date = parse_timeline_date(date_str)
                 if date is not None:
+                    # Determine if this is a milestone (non-economic) event
+                    is_milestone = study in {
+                        'PoO_Submitted', 'PoO_Accepted', 'PoO_Approved',
+                        'NEPA_Start', 'Final_EIS', 'Final_EA', 
+                        'Record of Decision', 'FID', 'FAST41_Transparency', 
+                        'FAST41_Covered', 'Fully_Permitted'
+                    }
+                    is_mre = study in {'MRE', 'MRE_U', 'MRE_U2', 'MRE_U3'}
+                    is_economic = study in {'PEA', 'PEA_U', 'PFS', 'FS', 'FS_U'}
+                    
+                    # Determine category for visual grouping
+                    if is_economic:
+                        category = 'Economic Study'
+                    elif is_mre:
+                        category = 'Resource Estimate'
+                    elif is_milestone:
+                        category = 'Milestone'
+                    else:
+                        category = 'Other'
+                    
                     event_rows.append({
                         'Company': company,
                         'Study': study,
-                        'Event': event,
+                        'Event_Type': event_type,
+                        'Event_Display': display_name,
                         'Date': date,
+                        'Category': category,
+                        'Is_Milestone': is_milestone,
+                        'Is_Economic': is_economic,
                     })
 
     if not event_rows:
         return
 
     events_df = pd.DataFrame(event_rows)
+    
+    # Sort for display
+    study_order = ['MRE', 'MRE_U', 'PEA', 'PEA_U', 'PFS', 'FS', 'FS_U', 
+                   'PoO_Submitted', 'PoO_Accepted', 'PoO_Approved',
+                   'NEPA_Start', 'Final_EIS', 'Final_EA',
+                   'Record of Decision', 'FID', 'FAST41_Transparency', 
+                   'FAST41_Covered', 'Fully_Permitted']
+    
+    existing_studies = [s for s in study_order if s in events_df['Study'].unique()]
+    remaining_studies = [s for s in events_df['Study'].unique() if s not in existing_studies]
+    y_order = existing_studies + remaining_studies
+    y_order_rev = y_order[::-1]
 
     fig = go.Figure()
 
-    # Event-style for readability (keeps the original Century Lithium look)
-    event_style = {
-        'Commitment': {'color': '#F39C12', 'symbol': 'diamond'},
-        'Expected':   {'color': '#E74C3C', 'symbol': 'diamond-open'},
-        'Actual':     {'color': '#2E86C1', 'symbol': 'circle'},
+    # Color scheme
+    colors = {
+        'Commitment': '#F39C12',  # Gold/Orange
+        'Expected': '#E74C3C',     # Red
+        'Actual': '#2E86C1',       # Blue
+    }
+    
+    # Symbols
+    symbols = {
+        'Commitment': 'diamond-open',
+        'Expected': 'diamond-open',
+        'Actual': 'circle',
+    }
+    
+    # Size mapping (Actual slightly larger)
+    sizes = {
+        'Commitment': 12,
+        'Expected': 12,
+        'Actual': 14,
     }
 
+    # For single company view: draw connector lines per study
+    if not is_compare:
+        # Draw connector lines (connecting Commitment → Expected → Actual for each study)
+        for study in events_df['Study'].unique():
+            study_events = events_df[events_df['Study'] == study].sort_values('Date')
+            if len(study_events) >= 2:
+                # Sort by date to draw the line
+                sorted_events = study_events.sort_values('Date')
+                fig.add_trace(go.Scatter(
+                    x=sorted_events['Date'],
+                    y=[study] * len(sorted_events),
+                    mode='lines',
+                    line=dict(color='#D5D8DC', width=2, dash='dot'),
+                    hoverinfo='skip',
+                    showlegend=False,
+                ))
+
+    # Add traces for each event type (Commitment, Expected, Actual)
+    for event_type in ['Commitment', 'Expected', 'Actual']:
+        sub = events_df[events_df['Event_Type'] == event_type]
+        if sub.empty:
+            continue
+        
+        color = colors.get(event_type, '#95A5A6')
+        symbol = symbols.get(event_type, 'circle')
+        size = sizes.get(event_type, 11)
+        
+        # Create the trace
+        trace = go.Scatter(
+            x=sub['Date'],
+            y=sub['Study'],
+            mode='markers+text' if not is_compare else 'markers',
+            name=event_type,
+            marker=dict(
+                color=color, 
+                size=size,
+                symbol=symbol,
+                line=dict(width=1.5, color='white')
+            ),
+            text=sub['Study'] if not is_compare else None,
+            textposition='middle right',
+            textfont=dict(size=13, color='#2C3E50'),
+            hovertemplate=(
+                f'<b>%{{y}}</b><br>'
+                f'{event_type}: %{{x|%d-%m-%Y}}<br>'
+                f'Company: %{{customdata[0]}}<extra></extra>'
+            ),
+            customdata=sub[['Company']].values,
+            showlegend=True,
+        )
+        fig.add_trace(trace)
+
+    # For comparison mode: add company colors as well
     if is_compare:
-        # Comparison mode: per-company colors + event-type symbols
+        # Add company-specific traces with different colors
+        fig = go.Figure()
+        
+        # For each company, show their events with company color
         for company in companies:
-            color = COMPANIES[company]['color']
-            sub = events_df[events_df['Company'] == company].sort_values('Date')
-            if sub.empty:
+            comp_color = COMPANIES[company]['color']
+            comp_events = events_df[events_df['Company'] == company]
+            
+            if comp_events.empty:
                 continue
-            # Connector line per study (from earliest to latest event)
-            for study in sub['Study'].unique():
-                study_events = sub[sub['Study'] == study].sort_values('Date')
+            
+            # Draw connector lines per study for this company
+            for study in comp_events['Study'].unique():
+                study_events = comp_events[comp_events['Study'] == study].sort_values('Date')
                 if len(study_events) >= 2:
                     fig.add_trace(go.Scatter(
                         x=study_events['Date'],
                         y=[study] * len(study_events),
                         mode='lines',
-                        line=dict(color=color, width=2),
-                        opacity=0.4,
+                        line=dict(color=comp_color, width=2, dash='dot'),
+                        opacity=0.3,
                         hoverinfo='skip',
                         showlegend=False,
                     ))
-            # One trace per event type, company-colored
-            for event in event_types:
-                event_sub = sub[sub['Event'] == event]
-                if event_sub.empty:
+            
+            # Add markers for each event type
+            for event_type in ['Commitment', 'Expected', 'Actual']:
+                sub = comp_events[comp_events['Event_Type'] == event_type]
+                if sub.empty:
                     continue
-                style = event_style[event]
+                
+                symbol = symbols.get(event_type, 'circle')
+                size = sizes.get(event_type, 11)
+                
                 fig.add_trace(go.Scatter(
-                    x=event_sub['Date'],
-                    y=event_sub['Study'],
+                    x=sub['Date'],
+                    y=sub['Study'],
                     mode='markers',
-                    name=f"{company} — {event}",
-                    marker=dict(color=color, size=10,
-                                symbol=style['symbol'],
-                                line=dict(width=1, color='white')),
-                    hovertemplate=f'<b>%{{y}}</b><br>{event}: %{{x|%d-%m-%Y}}<extra></extra>',
-                ))
-        fig.update_layout(title='Study Timeline — Commitment, Expected & Actual')
-    else:
-        # Single company: classic event-type styling (like the original Century view)
-        for study in events_df['Study'].unique():
-            study_events = events_df[events_df['Study'] == study].sort_values('Date')
-            if len(study_events) >= 2:
-                fig.add_trace(go.Scatter(
-                    x=study_events['Date'],
-                    y=[study] * len(study_events),
-                    mode='lines',
-                    line=dict(color='#D5D8DC', width=3),
-                    hoverinfo='skip',
-                    showlegend=False,
+                    name=f"{COMPANIES[company]['short_name']} — {event_type}",
+                    marker=dict(
+                        color=comp_color, 
+                        size=size,
+                        symbol=symbol,
+                        line=dict(width=1.5, color='white')
+                    ),
+                    hovertemplate=(
+                        f'<b>{company}</b><br>'
+                        f'<b>%{{y}}</b><br>'
+                        f'{event_type}: %{{x|%d-%m-%Y}}<extra></extra>'
+                    ),
                 ))
 
-        # One simple trace per event type -> clean simple legend
-        for event, style in event_style.items():
-            sub = events_df[events_df['Event'] == event]
-            if sub.empty:
-                continue
-            fig.add_trace(go.Scatter(
-                x=sub['Date'],
-                y=sub['Study'],
-                mode='markers',
-                name=event,
-                marker=dict(color=style['color'], size=11,
-                            symbol=style['symbol'],
-                            line=dict(width=1, color='white')),
-                hovertemplate=f'<b>%{{y}}</b><br>{event}: %{{x|%d-%m-%Y}}<extra></extra>',
-            ))
-        fig.update_layout(title='Study Timeline')
-
+    # Update layout - HIDE the y-axis labels (the study names on the left)
     fig.update_layout(
-        height=350,
+        height=450 if not is_compare else 500,
         template='plotly_white',
         showlegend=True,
-        legend=dict(orientation='h', yanchor='bottom', y=1.05, xanchor='center', x=0.5,
-                    font=dict(size=12)),
-        yaxis=dict(title=None, tickfont=dict(size=12),
-                   categoryorder='array',
-                   categoryarray=timeline_df['Study'].unique()[::-1].tolist()),
-        xaxis=dict(title=None, tickfont=dict(size=11), tickformat='%Y'),
-        margin=dict(t=60, b=10, l=40, r=20),
+        legend=dict(
+            orientation='h', 
+            yanchor='bottom', 
+            y=1.02 if not is_compare else 1.05, 
+            xanchor='center', 
+            x=0.5,
+            font=dict(size=12)
+        ),
+        yaxis=dict(
+            title=None, 
+            tickfont=dict(size=12, color='#2C3E50'),
+            categoryorder='array',
+            categoryarray=y_order_rev,
+            tickmode='array',
+            ticktext=[''] * len(y_order_rev),  # Hide the labels on the left
+            tickvals=[s for s in y_order_rev],
+            gridcolor='#ECF0F1',
+            gridwidth=1,
+            showticklabels=False,  # THIS HIDES THE Y-AXIS LABELS
+        ),
+        xaxis=dict(
+            title=None, 
+            tickfont=dict(size=11), 
+            tickformat='%b %Y',
+            gridcolor='#ECF0F1',
+            gridwidth=1,
+            showgrid=True,
+        ),
+        margin=dict(t=60, b=10, l=20, r=100),  # Reduced left margin since we removed labels
+        plot_bgcolor='white',
+        hoverlabel=dict(
+            bgcolor='white',
+            font_size=12,
+            font_family='Arial',
+        ),
     )
+    
     st.plotly_chart(fig, use_container_width=True)
+    
+    # REMOVED the legend explanation text
 
 
 # ============================================================================
@@ -2461,7 +2848,7 @@ def render_comparison_snapshot(companies):
 
 
 # ============================================================================
-# MAIN APP - MET STREAMLIT-PAGE-ANALYTICS
+# MAIN APP
 # ============================================================================
 
 with StreamlitPageAnalytics.track(
@@ -2481,16 +2868,17 @@ with StreamlitPageAnalytics.track(
 
     is_compare = view_mode == "Compare Companies" and len(selected_companies) >= 2
 
-    # Title
+    # Title - more compact
     company_display = ", ".join([COMPANIES[c]['short_name'] for c in selected_companies])
     if is_compare:
         st.title(f"Project Comparison: {company_display}")
     else:
         st.title(selected_companies[0])
 
-    st.info("""**Disclaimer:** MVP/Demo. Data may be inaccurate. Not financial advice.""")
+    # Disclaimer - smaller and less prominent
+    st.caption("MVP/Demo — Data may be inaccurate. Not financial advice.")
 
-    # Show data source
+    # Show data source if set
     if 'data_source' in st.session_state:
         st.caption(f"Data source: {st.session_state.data_source}")
 
@@ -2499,45 +2887,45 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     if is_compare:
         render_comparison_snapshot(selected_companies)
-        st.divider()
+        st.markdown("")  # Small gap instead of divider
 
     # ============================================================================
     # SECTION 1: EXECUTIVE SUMMARY (Market Sentiment)
     # ============================================================================
     render_dashboard(selected_companies)
-    st.divider()
+    st.markdown("")  # Small gap
 
     # ============================================================================
     # SECTION 2: THE ASSET (Resource & Economics)
     # ============================================================================
     render_project_studies(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 3: KEY INSIGHTS (Latest Study Highlights)
     # ============================================================================
     render_key_insights(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 4: MARKET CONTEXT (Stock Performance)
     # ============================================================================
     st.subheader("Stock Performance")
     render_stock_chart(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 5: TRACK RECORD (Press Release Timeline)
     # ============================================================================
     render_timeline(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 6: SENTIMENT ANALYSIS
     # ============================================================================
-    st.subheader("Sentiment Analysis - Press Releases & Interviews Over Time")
-    st.caption("Analysis of sentiment in press releases, interviews, and management communications over time")
-
+    st.subheader("Sentiment Analysis")
+    st.caption("Press releases & interviews over time")
+    
     if not is_compare:
         # Press release dates from the past year (Century Lithium; MVP placeholder)
         press_release_dates = [
@@ -2573,55 +2961,52 @@ with StreamlitPageAnalytics.track(
 
         sentiment_df = pd.DataFrame({
             "Date": pd.to_datetime(press_release_dates),
-            "Press Release / Event": [f"PR #{i+1}" for i in range(len(press_release_dates))],
-            "Sentiment Score": ["Pending"] * len(press_release_dates),
-            "Sentiment Label": ["—"] * len(press_release_dates),
+            "Event": [f"PR #{i+1}" for i in range(len(press_release_dates))],
+            "Sentiment": ["Pending"] * len(press_release_dates),
         })
-        sentiment_df["Date"] = sentiment_df["Date"].dt.strftime("%B %d, %Y")
+        sentiment_df["Date"] = sentiment_df["Date"].dt.strftime("%b %d, %Y")
 
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Sentiment Score Over Time")
             st.dataframe(
                 sentiment_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Date": st.column_config.TextColumn("Date", width="medium"),
-                    "Press Release / Event": st.column_config.TextColumn("Press Release / Event", width="medium"),
-                    "Sentiment Score": st.column_config.TextColumn("Sentiment Score", width="small"),
-                    "Sentiment Label": st.column_config.TextColumn("Sentiment Label", width="small"),
+                    "Event": st.column_config.TextColumn("Event", width="medium"),
+                    "Sentiment": st.column_config.TextColumn("Score", width="small"),
                 },
             )
     else:
         st.caption("Sentiment analysis per company to be added for comparison mode.")
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 7: FINANCIAL HEALTH (Cash, Burn, Dilution)
     # ============================================================================
-    st.subheader("Historical Capital Raises & Cash Position")
+    st.subheader("Financial Health")
     render_financial_section(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 8: MARKET DEMAND (Google Search Interest)
     # ============================================================================
-    st.subheader("Google Search Interest")
+    st.subheader("Market Demand")
     render_search_analysis(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 9: NEWS
     # ============================================================================
     render_news_section(selected_companies)
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 10: MANAGEMENT DUE DILIGENCE
     # ============================================================================
     st.subheader("Management Due Diligence")
-    st.divider()
+    st.markdown("")
 
     # ============================================================================
     # SECTION 11: Q&A
