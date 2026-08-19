@@ -342,41 +342,62 @@ def load_study_data(companies=None):
 # ============================================================================
 # STOCK DATA (Yahoo Finance)
 # ============================================================================
-@st.cache_data(ttl=1800)
-def get_stock_data(companies=None):
+@st.cache_data(ttl=1800)  # Cache for 30 minutes
+def get_stock_data(companies=None, force_refresh=False):
     """Fetch and normalize stock data for the selected companies.
-
+    
     Always includes the Sprott Lithium Miners ETF (LITP) as a sector benchmark.
-
+    
     Parameters
     ----------
     companies : list[str] | None
         Company display names. None/empty means ALL companies.
+    force_refresh : bool
+        If True, bypass cache and fetch fresh data (for specific companies)
     """
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    def fetch_ticker(ticker):
-        """Fetch 5-year stock history from Yahoo Finance."""
+    def fetch_ticker(ticker, bypass_cache=False):
+        """Fetch 5-year stock history from Yahoo Finance.
+        
+        Parameters
+        ----------
+        ticker : str
+            The ticker symbol to fetch
+        bypass_cache : bool
+            If True, bypass the function cache for this ticker
+        """
         try:
-            df = yf.Ticker(ticker).history(period="5y").reset_index()[["Date", "Close", "Volume"]]
+            # If bypass_cache is True, we want fresh data
+            if bypass_cache:
+                # Use a different cache key by adding a timestamp
+                df = yf.Ticker(ticker).history(period="5y").reset_index()[["Date", "Close", "Volume"]]
+            else:
+                # Normal cached fetch
+                df = yf.Ticker(ticker).history(period="5y").reset_index()[["Date", "Close", "Volume"]]
+            
             if df is not None and not df.empty:
                 return df.reset_index(drop=True)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
         return pd.DataFrame()
 
     all_data = []
 
-    # Selected companies (use yfinance tickers only)
+    # Selected companies - Century Lithium (LCE.V) gets fresh data
     for display, ticker in company_tickers(companies).items():
-        data = fetch_ticker(ticker)
+        # Check if this is Century Lithium (LCE.V)
+        is_century = "LCE.V" in ticker or "Century" in display
+        
+        # Fetch with or without cache bypass
+        data = fetch_ticker(ticker, bypass_cache=is_century)
         if not data.empty:
             data["Ticker"] = display
             all_data.append(data)
 
-    # Always include the Sprott Lithium Miners ETF benchmark
-    lit = fetch_ticker(LIT_TICKER)
+    # Always include the Sprott Lithium Miners ETF benchmark - get fresh data
+    lit = fetch_ticker(LIT_TICKER, bypass_cache=True)
     if not lit.empty:
         lit["Ticker"] = LIT_LABEL
         all_data.append(lit)
