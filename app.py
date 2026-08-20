@@ -230,23 +230,218 @@ st.markdown("""
 SERPAPI_KEY = st.secrets.get("SERPAPI_KEY", "")
 
 # ============================================================================
-# GOOGLE ANALYTICS MET USER DATA - NIEUW
+# GOOGLE ANALYTICS MET USER DATA - VERBETERD
 # ============================================================================
 # Haal GA4 ID uit secrets (veilig!)
 GA4_ID = st.secrets.get("GA4_ID", "")
 
-# Alleen toevoegen als er een ID is ingesteld
-if GA4_ID:
+# Track welke secties al zijn gezien in deze sessie (voor session depth)
+if "seen_sections" not in st.session_state:
+    st.session_state.seen_sections = set()
+
+# Track of page_loaded al is gefired in deze sessie (voorkomt dubbele events
+# door Streamlit reruns bij elke interactie)
+if "page_loaded_fired" not in st.session_state:
+    st.session_state.page_loaded_fired = False
+
+# Track laatste view mode en companies (voor change events)
+if "last_view_mode" not in st.session_state:
+    st.session_state.last_view_mode = None
+if "last_companies" not in st.session_state:
+    st.session_state.last_companies = None
+
+def track_event(name, params=None):
+    """Stuur een GA4 custom event met gemeenschappelijke parameters."""
+    if not GA4_ID:
+        return
+    if params is None:
+        params = {}
+    params.update({
+        "app_name": "Lithium_Project_Comparison",
+        "user_id": st.session_state.user_id,
+        "is_returning": str(st.session_state.is_returning),
+        "visit_number": st.session_state.visit_number,
+    })
     st_gtag(
         id=GA4_ID,
-        event_name="page_loaded",
-        params={
-            "app_name": "Lithium_Project_Comparison",
-            "user_id": st.session_state.user_id,
-            "is_returning": str(st.session_state.is_returning),
-            "visit_number": st.session_state.visit_number
-        }
+        event_name=name,
+        params=params,
     )
+
+def track_page_loaded():
+    """Fire page_loaded slechts ÉÉN keer per sessie.
+    
+    Streamlit rerunt het hele script bij elke interactie (button click,
+    selectbox change, etc.). Zonder deze guard zou page_loaded 3-4x per
+    sessie gefired worden, wat de data vervuilt.
+    """
+    if not GA4_ID or st.session_state.page_loaded_fired:
+        return
+    st.session_state.page_loaded_fired = True
+    track_event("page_loaded")
+
+def track_section_view(section_name):
+    """Track dat een gebruiker een specifieke dashboard-sectie heeft gezien.
+    
+    Stuurt een 'section_view' event en houdt bij hoeveel unieke secties
+    er in deze sessie zijn bekeken (session depth). Dit laat zien welke
+    secties gebruikers belangrijk vinden en waar ze afhaken.
+    """
+    if not GA4_ID:
+        return
+    # Alleen tracken als deze sectie nog niet eerder in deze sessie is gezien
+    if section_name in st.session_state.seen_sections:
+        return
+    st.session_state.seen_sections.add(section_name)
+    track_event("section_view", {
+        "section_name": section_name,
+        "session_depth": len(st.session_state.seen_sections),
+    })
+
+def render_section_anchor(section_name):
+    """Render een HTML-anchor voor scroll tracking.
+    
+    Dit voegt een onzichtbaar element toe met een id dat de JavaScript
+    IntersectionObserver kan detecteren. Wanneer de gebruiker naar dit
+    element scrolt (50% zichtbaar), wordt een GA4 event gefired.
+    """
+    if not GA4_ID:
+        return
+    section_id = "section-" + section_name.replace(" ", "-")
+    st.markdown(
+        f'<div id="{section_id}" style="position:relative;height:1px;margin:0;padding:0;"></div>',
+        unsafe_allow_html=True
+    )
+
+def inject_scroll_tracking():
+    """Injecteer JavaScript dat sectie-views trackt op basis van scroll positie.
+    
+    Dit is de KERN van de verbetering. In plaats van alle secties te tracken
+    bij het laden (wat Streamlit doet omdat het alles rendert), tracken we
+    alleen secties die de gebruiker DAADWERKELIJK in beeld heeft gehad.
+    
+    Hoe het werkt:
+    1. Elke sectie heeft een HTML-anchor (bijv. <div id="section-Market-Sentiment">)
+    2. JavaScript luistert naar scroll events via IntersectionObserver
+    3. Wanneer een sectie-anchor 50% in beeld komt, wordt een GA4 event
+       gefired via de dataLayer
+    4. Dit gebeurt maar ÉÉN keer per sectie per sessie
+    """
+    if not GA4_ID:
+        return
+    
+    scroll_js = """
+    <script>
+    (function() {
+        // Houd bij welke secties al zijn gezien (voorkomt dubbele events)
+        var seenSections = {};
+        
+        // IntersectionObserver detecteert wanneer een element in beeld komt
+        var observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                    var sectionId = entry.target.id;
+                    if (sectionId && !seenSections[sectionId]) {
+                        seenSections[sectionId] = true;
+                        
+                        // Stuur event naar GA4 via dataLayer
+                        window.dataLayer = window.dataLayer || [];
+                        window.dataLayer.push({
+                            'event': 'section_view',
+                            'section_name': sectionId.replace('section-', '').replace(/-/g, ' '),
+                            'session_depth': Object.keys(seenSections).length
+                        });
+                    }
+                }
+            });
+        }, {
+            // Track wanneer 50% van de sectie zichtbaar is
+            threshold: 0.5
+        });
+        
+        // Observeer alle sectie-elementen
+        function initObserver() {
+            var sections = document.querySelectorAll('[id^="section-"]');
+            sections.forEach(function(section) {
+                observer.observe(section);
+            });
+        }
+        
+        // Initialiseer na DOM load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initObserver);
+        } else {
+            initObserver();
+        }
+        
+        // Streamlit rerunt de pagina bij interacties - herinitialiseer observer
+        // na elke rerun (met kleine vertraging zodat DOM klaar is)
+        var lastUrl = window.location.href;
+        setInterval(function() {
+            if (window.location.href !== lastUrl) {
+                lastUrl = window.location.href;
+                setTimeout(initObserver, 500);
+            }
+        }, 1000);
+    })();
+    </script>
+    """
+    st.markdown(scroll_js, unsafe_allow_html=True)
+
+def track_tab_click(tab_name):
+    """Track wanneer een gebruiker op een tab klikt."""
+    if not GA4_ID:
+        return
+    track_event("tab_click", {
+        "tab_name": tab_name,
+    })
+
+def track_expander_open(expander_name):
+    """Track wanneer een gebruiker een expander opent."""
+    if not GA4_ID:
+        return
+    track_event("expander_open", {
+        "expander_name": expander_name,
+    })
+
+def track_qa_submit():
+    """Track wanneer een gebruiker een vraag stelt in de Q&A sectie."""
+    if not GA4_ID:
+        return
+    track_event("qa_submit")
+
+def track_qa_like():
+    """Track wanneer een gebruiker een vraag liket."""
+    if not GA4_ID:
+        return
+    track_event("qa_like")
+
+def track_view_mode_change(view_mode):
+    """Track wanneer een gebruiker wisselt tussen Single en Compare mode."""
+    if not GA4_ID:
+        return
+    if st.session_state.last_view_mode == view_mode:
+        return
+    st.session_state.last_view_mode = view_mode
+    track_event("view_mode_change", {
+        "view_mode": view_mode,
+    })
+
+def track_company_selection(companies):
+    """Track welke bedrijven een gebruiker selecteert."""
+    if not GA4_ID:
+        return
+    companies_tuple = tuple(sorted(companies))
+    if st.session_state.last_companies == companies_tuple:
+        return
+    st.session_state.last_companies = companies_tuple
+    track_event("company_selection", {
+        "companies": ", ".join(companies),
+        "company_count": len(companies),
+    })
+
+# Fire page_loaded eenmalig per sessie
+track_page_loaded()
 
 # ============================================================================
 # SIDEBAR NAVIGATION
@@ -866,6 +1061,11 @@ def render_project_studies(companies=None):
     if not df_studies.empty:
         tab1, tab2, tab3 = st.tabs(["Economics", "Resource & Grade", "All Data"])
 
+        # Track tab clicks
+        track_tab_click("Economics")
+        track_tab_click("Resource & Grade")
+        track_tab_click("All Data")
+
         with tab1:
             st.subheader("Value Ratios")
             ratio_data = df_studies[df_studies['AfterTax_NPV_M'].notna()].copy()
@@ -930,6 +1130,7 @@ def render_project_studies(companies=None):
 
                       # Compacte tabel — 2 decimalen overal
                     with st.expander("View detailed data table", expanded=False):
+                        track_expander_open("View detailed data table")
                         display_ratios = merged[['Stage_Display', 'AfterTax_NPV_M', 'Initial_Capex_M',
                                              'MarketCap_M', 'NPV_MarketCap', 'NPV_CAPEX', 'NPV_per_Share',
                                              'Stock_Price']].copy()
@@ -1392,6 +1593,7 @@ def render_key_insights(companies=None):
 
         # Supporting detail tucked away in an expander to avoid clutter
         with st.expander("Additional study details"):
+            track_expander_open("Additional study details")
             grade = f"{latest['Average_Lithium_Grade']:,.0f} ppm" if pd.notna(latest['Average_Lithium_Grade']) else "N/A"
             recovery = f"{latest['Metallurgical_Recovery_%']:,.1f}%" if pd.notna(latest['Metallurgical_Recovery_%']) else "N/A"
             if pd.notna(latest['Net_Operating_Cost_t']):
@@ -1856,6 +2058,7 @@ def render_qa_section():
             if len(question) < 10:
                 st.warning("Could you add a bit more detail? Please use at least 10 characters.")
             else:
+                track_qa_submit()
                 st.session_state.qa.append({
                     "question": question,
                     "answer": None,
@@ -1881,6 +2084,7 @@ def render_qa_section():
                     st.rerun()
 
         if st.button(f"{item['likes']}", key=f"like_{i}"):
+            track_qa_like()
             st.session_state.qa[i]["likes"] += 1
 
         if item["answer"]:
@@ -2877,7 +3081,14 @@ with StreamlitPageAnalytics.track(
     session_id=st.session_state.session_id,
     user_id=st.session_state.user_id
 ):
+    # Injecteer scroll tracking JavaScript (detecteert welke secties in beeld komen)
+    inject_scroll_tracking()
+
     view_mode, selected_companies = render_sidebar()
+
+    # Track view mode and company selection changes
+    track_view_mode_change(view_mode)
+    track_company_selection(selected_companies)
 
     # Store for dynamic QA label
     st.session_state.selected_companies = selected_companies
@@ -2907,30 +3118,40 @@ with StreamlitPageAnalytics.track(
     # SECTION 0: COMPARISON SNAPSHOT (compare mode only)
     # ============================================================================
     if is_compare:
+        render_section_anchor("Comparison Snapshot")
+        track_section_view("Comparison Snapshot")
         render_comparison_snapshot(selected_companies)
         st.markdown("")  # Small gap instead of divider
 
     # ============================================================================
     # SECTION 1: EXECUTIVE SUMMARY (Market Sentiment)
     # ============================================================================
+    render_section_anchor("Market Sentiment")
+    track_section_view("Market Sentiment")
     render_dashboard(selected_companies)
     st.markdown("")  # Small gap
 
     # ============================================================================
     # SECTION 2: THE ASSET (Resource & Economics)
     # ============================================================================
+    render_section_anchor("Project Studies")
+    track_section_view("Project Studies")
     render_project_studies(selected_companies)
     st.markdown("")
 
     # ============================================================================
     # SECTION 3: KEY INSIGHTS (Latest Study Highlights)
     # ============================================================================
+    render_section_anchor("Key Insights")
+    track_section_view("Key Insights")
     render_key_insights(selected_companies)
     st.markdown("")
 
     # ============================================================================
     # SECTION 4: MARKET CONTEXT (Stock Performance)
     # ============================================================================
+    render_section_anchor("Stock Performance")
+    track_section_view("Stock Performance")
     st.subheader("Stock Performance")
     render_stock_chart(selected_companies)
     st.markdown("")
@@ -2938,12 +3159,16 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     # SECTION 5: TRACK RECORD (Press Release Timeline)
     # ============================================================================
+    render_section_anchor("Press Release Timeline")
+    track_section_view("Press Release Timeline")
     render_timeline(selected_companies)
     st.markdown("")
 
     # ============================================================================
     # SECTION 6: SENTIMENT ANALYSIS
     # ============================================================================
+    render_section_anchor("Sentiment Analysis")
+    track_section_view("Sentiment Analysis")
     st.subheader("Sentiment Analysis")
     st.caption("Press releases & interviews over time")
     
@@ -3006,6 +3231,8 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     # SECTION 7: FINANCIAL HEALTH (Cash, Burn, Dilution)
     # ============================================================================
+    render_section_anchor("Financial Health")
+    track_section_view("Financial Health")
     st.subheader("Financial Health")
     render_financial_section(selected_companies)
     st.markdown("")
@@ -3013,6 +3240,8 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     # SECTION 8: MARKET DEMAND (Google Search Interest)
     # ============================================================================
+    render_section_anchor("Market Demand")
+    track_section_view("Market Demand")
     st.subheader("Market Demand")
     render_search_analysis(selected_companies)
     st.markdown("")
@@ -3020,18 +3249,24 @@ with StreamlitPageAnalytics.track(
     # ============================================================================
     # SECTION 9: NEWS
     # ============================================================================
+    render_section_anchor("News")
+    track_section_view("News")
     render_news_section(selected_companies)
     st.markdown("")
 
     # ============================================================================
     # SECTION 10: MANAGEMENT DUE DILIGENCE
     # ============================================================================
+    render_section_anchor("Management Due Diligence")
+    track_section_view("Management Due Diligence")
     st.subheader("Management Due Diligence")
     st.markdown("")
 
     # ============================================================================
     # SECTION 11: Q&A
     # ============================================================================
+    render_section_anchor("Q&A")
+    track_section_view("Q&A")
     render_qa_section()
 
 # python -m streamlit run app.py

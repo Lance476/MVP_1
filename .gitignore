@@ -11,3 +11,5 @@ desktop.ini
 .vscode/
 .idea/
 .aider*
+google-oauth-client.json
+client_secret_*.json
