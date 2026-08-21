@@ -156,8 +156,8 @@ def get_market_cap_data(companies=None):
                 if pd.notna(row.get('AfterTax_NPV_M')):
                     study_dates[row['Stage_Display']] = row['Date'].strftime('%Y-%m-%d')
 
-            # Manual market-cap overrides take priority when Compustat has no
-            # stock coverage for a company's older study dates (e.g. LAC's
+            # Manual market-cap overrides take priority when the stock dataset
+            # has no coverage for a company's older study dates (e.g. LAC's
             # pre-Oct-2023 split history is not in Stock_Daily_Combined.csv).
             comp_overrides = MARKET_CAP_OVERRIDES.get(company, {})
 
@@ -727,14 +727,14 @@ def track_event(name, params=None):
 
 def track_page_loaded():
     """Fire page_loaded ONCE per session (not on every rerun)."""
-    if not _can_track() or st.session_state.page_loaded_fired:
+    if not _can_track() or st.session_state.get("page_loaded_fired", False):
         return
     st.session_state.page_loaded_fired = True
     track_event("page_loaded")
 
 
 def track_view_mode_change(view_mode):
-    if not _can_track() or st.session_state.last_view_mode == view_mode:
+    if not _can_track() or st.session_state.get("last_view_mode") == view_mode:
         return
     st.session_state.last_view_mode = view_mode
     track_event("view_mode_change", {"view_mode": view_mode})
@@ -744,7 +744,7 @@ def track_company_selection(companies):
     if not _can_track():
         return
     key = tuple(sorted(companies))
-    if st.session_state.last_companies == key:
+    if st.session_state.get("last_companies") == key:
         return
     st.session_state.last_companies = key
     track_event("company_selection", {

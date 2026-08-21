@@ -10,7 +10,7 @@
 # COMPANY REGISTRY
 # ============================================================================
 # Each entry maps a display name to its identifiers for every data source:
-#   - gvkey:        Compustat identifier (financials CSV)
+#   - gvkey:        Company identifier (financials CSV)
 #   - yf_ticker:    Yahoo Finance ticker (stock data)
 #   - search_terms: Google Trends search terms (SerpApi) — each term is
 #                   fetched with its own query so its interest values are
@@ -315,7 +315,7 @@ STUDY_DATA = {
 # ============================================================================
 # HISTORICAL MARKET DATA OVERRIDES
 # ============================================================================
-# Some companies (e.g. LAC) have Compustat stock data that only begins after a
+# Some companies (e.g. LAC) have stock data that only begins after a
 # corporate event (LAC's Oct-2023 split), so earlier study dates have no
 # price × shares record. Provide the market data manually here.
 # ============================================================================
