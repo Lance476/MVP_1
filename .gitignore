@@ -14,3 +14,4 @@ desktop.ini
 google-oauth-client.json
 client_secret_*.json
 feedback.csv
+*.log

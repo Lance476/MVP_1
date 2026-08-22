@@ -20,8 +20,8 @@
 COMPANIES = {
     "Century Lithium": {
         "gvkey": 106098,
-        "yf_ticker": "CYDVF",
-        "search_terms": ['"Century Lithium"', '"LCE stock"', 'CYDVF'],
+        "yf_ticker": "LCE.V",
+        "search_terms": ['"Century Lithium"', '"LCE stock"', 'LCE.V'],
         "short_name": "Century",
         "color": "#2E86C1",
     },
@@ -70,6 +70,87 @@ COMPANIES = {
 }
 
 DEFAULT_COMPANY = "Century Lithium"
+
+# ============================================================================
+# STOCK PERFORMANCE CLUSTERS
+# ============================================================================
+# Grouped stock performance comparison so investors can compare Nevada
+# lithium juniors vs Canadian juniors vs Australian producers/ETF-benchmark.
+# Each entry maps a display label to its Yahoo Finance ticker.
+# ============================================================================
+STOCK_CLUSTERS = {
+    "Nevada Juniors": {
+        "label": "Nevada Lithium Juniors",
+        "members": {
+            "Lithium Americas": "LAC",
+            "American Battery Technology": "ABAT",
+            "Ioneer": "IONR",
+            "Century Lithium": "LCE.V",
+            "Surge Battery Metals": "NILI",
+            "Noram Lithium": "NRM",
+            "Nevada Lithium": "NVLHF",
+        },
+    },
+    "Canadian Juniors": {
+        "label": "Canadian Lithium Juniors",
+        "members": {
+            "E3 Lithium": "ETL.V",
+            "Patriot Battery Metals": "PMETF",
+            "Critical Elements Lithium": "CRE.V",
+        },
+    },
+    "Australian Producers + Benchmark": {
+        "label": "Australian Producers + Sprott ETF",
+        "members": {
+            "Pilbara Minerals": "PLS.AX",
+            "Mineral Resources": "MIN.AX",
+            "Liontown Resources": "LTR.AX",
+            "Sprott Lithium Miners ETF": "LITP",
+        },
+    },
+}
+
+# ============================================================================
+# GOOGLE ADS SEARCH VOLUME (per company, monthly)
+# ============================================================================
+# Monthly Google Ads search volume for each company's brand terms, plus two
+# sector-wide benchmarks ("lithium stocks" and "Nevada Lithium") that are
+# shown alongside every company's own line in the search-volume chart.
+# ============================================================================
+SEARCH_DATA = {
+    "Lithium Americas": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
+        "values": [4400, 33100, 27100, 8100, 4400, 8100, 4400, 4400, 4400, 5400, 5400, 3600],
+    },
+    "American Battery Technology": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
+        "values": [880, 1300, 5400, 1900, 1000, 1000, 880, 480, 590, 1000, 880, 590],
+    },
+    "Ioneer": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
+        "values": [720, 880, 1300, 590, 880, 880, 1900, 1000, 720, 480, 720, 720],
+    },
+    "Century Lithium": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
+        "values": [140, 140, 260, 140, 170, 320, 320, 260, 170, 140, 170, 140],
+    },
+    "Surge Battery Metals": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
+        "values": [110, 140, 480, 210, 210, 320, 260, 170, 170, 210, 260, 170],
+    },
+    "Noram Lithium": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
+        "values": [10, 20, 40, 20, 20, 20, 20, 10, 10, 10, 20, 10],
+    },
+    "lithium stocks": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026"],
+        "values": [5400, 8100, 12100, 3600, 3600, 6600, 4400, 3600, 3600, 4400, 2900],
+    },
+    "Nevada Lithium": {
+        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026"],
+        "values": [390, 480, 590, 390, 390, 480, 2900, 480, 320, 390, 320],
+    },
+}
 
 # ============================================================================
 # MARKT BENCHMARK (Sprott Lithium Miners ETF)
@@ -406,5 +487,240 @@ TIMELINE_DATA = {
         {"Study": "MRE_U", "Commitment date": "—", "Expected date": "—", "Actual date": "01-12-2022", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
         {"Study": "PEA", "Commitment date": "05-10-2021", "Expected date": "31-03-2022", "Actual date": "01-02-2023", "Delay": "~10 months", "Commitment Evidence": "Optimization of process engineering and pre-concentration work being fast-tracked to enable completion of a Preliminary Economic Assessment ('PEA') during Q1 2022.", "Expected Evidence": "—"},
         {"Study": "MRE_U", "Commitment date": "08-12-2023", "Expected date": "—", "Actual date": "27-02-2025", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
+    ],
+}
+
+# ============================================================================
+# YOUTUBE VIDEOS (per company) — SENTIMENT SECTION
+# ============================================================================
+# Hand-collected YouTube coverage per company, used as input for the
+# Sentiment section. Each entry maps a company display name (must match
+# COMPANIES keys) to a list of video records:
+#   - date:     publish date (YYYY-MM-DD)
+#   - title:    video title
+#   - channel:  YouTube channel name
+#   - duration: video length (MM:SS or H:MM:SS)
+#   - views:    view count at time of collection
+#   - url:      YouTube link
+# ============================================================================
+
+YOUTUBE_VIDEOS = {
+    "Century Lithium": [
+        {
+            "date": "2026-02-26",
+            "title": "Analyst Mark Reichman - Century Lithium (CYDVF) - Updated Angel Island Feasibility Study Highlights",
+            "channel": "channelchek",
+            "duration": "2:00",
+            "views": 163,
+            "url": "https://www.youtube.com/watch?v=-XNVLN3om9o"
+        },
+        {
+            "date": "2026-02-24",
+            "title": "Century Lithium updated study delivers $4B NPV for Angel Island Project while reducing initial costs",
+            "channel": "Proactive Investors",
+            "duration": "6:25",
+            "views": 877,
+            "url": "https://www.youtube.com/watch?v=Pz_N9Io2UIk"
+        },
+        {
+            "date": "2025-12-02",
+            "title": "Century Lithium reports breakthrough results in rare earth recovery from Angel Island project",
+            "channel": "Proactive Investors",
+            "duration": "4:53",
+            "views": 1066,
+            "url": "https://www.youtube.com/watch?v=Tra7bM4XoGU"
+        },
+        {
+            "date": "2025-04-15",
+            "title": "Century Lithium: Project Update, U.S. Policy, Permitting, Feasibility | Bill Willoughby",
+            "channel": "Rock Stock Channel",
+            "duration": "27:19",
+            "views": 1231,
+            "url": "https://www.youtube.com/watch?v=DYfheN_tVgY"
+        },
+        {
+            "date": "2025-10-27",
+            "title": "Century Lithium: Battery materials quality lithium for LFP & LMA",
+            "channel": "Proactive Investors",
+            "duration": "1:03",
+            "views": 324,
+            "url": "https://www.youtube.com/watch?v=Smjkgn8Xzq8"
+        },
+        {
+            "date": "2026-02-26",
+            "title": "Century Lithium's Angel Island project - Permitting and next steps revealed",
+            "channel": "Proactive Investors",
+            "duration": "1:28",
+            "views": 217,
+            "url": "https://www.youtube.com/watch?v=PqdBmP2OXfs"
+        },
+        {
+            "date": "2023-02-09",
+            "title": "Century Lithium Corp.",
+            "channel": "Century Lithium Corp.",
+            "duration": "3:50",
+            "views": 973,
+            "url": "https://www.youtube.com/watch?v=IHHx4rfZBC4"
+        },
+        {
+            "date": "2026-02-26",
+            "title": "Lithium production costs slashed at Century Lithium's Angel Island project",
+            "channel": "Proactive Investors",
+            "duration": "0:52",
+            "views": 363,
+            "url": "https://www.youtube.com/watch?v=X8Llcs1Q6hw"
+        },
+        {
+            "date": "2025-05-06",
+            "title": "Century Lithium achieves breakthrough in direct lithium with high recovery and battery-grade purity",
+            "channel": "Proactive Investors",
+            "duration": "5:28",
+            "views": 635,
+            "url": "https://www.youtube.com/watch?v=lWHq8VD35DY"
+        },
+        {
+            "date": "2025-10-02",
+            "title": "Century Lithium Presentation / Q&A (OTCQX: CYDVF; TSX-V: LCE) - Bill Willoughby, President & CEO",
+            "channel": "San Diego Torrey Hills Capital",
+            "duration": "1:11:46",
+            "views": 460,
+            "url": "https://www.youtube.com/watch?v=Oj2ye28H8g8"
+        },
+        {
+            "date": "2025-02-24",
+            "title": "Century Lithium identifies CAPEX reduction for Angel Island project, plans updated feasibility study",
+            "channel": "Proactive Investors",
+            "duration": "6:10",
+            "views": 554,
+            "url": "https://www.youtube.com/watch?v=narDvkg6wjk"
+        },
+        {
+            "date": "2023-02-10",
+            "title": "Century Lithium teams with Koch Technology to use its technology for Lithium Extraction",
+            "channel": "Proactive Investors",
+            "duration": "3:27",
+            "views": 1637,
+            "url": "https://www.youtube.com/watch?v=Bg7g4p72igE"
+        },
+        {
+            "date": "2025-10-27",
+            "title": "Century Lithium relocates demonstration plant to Tonopah Airport to advance Angel Island project",
+            "channel": "Proactive Investors",
+            "duration": "4:46",
+            "views": 854,
+            "url": "https://www.youtube.com/watch?v=IjEj3ObShLs"
+        },
+        {
+            "date": "2026-01-31",
+            "title": "Lithium vs Lead Acid: Are Century Lithium Batteries Worth It on a Boat?",
+            "channel": "Fishy Business",
+            "duration": "2:05",
+            "views": 384,
+            "url": "https://www.youtube.com/watch?v=1FF8KNn5LPg"
+        },
+        {
+            "date": "2025-10-01",
+            "title": "Century Lithium secures FAST-41 status and completes baseline studies at Angel Island project",
+            "channel": "Proactive Investors",
+            "duration": "5:18",
+            "views": 803,
+            "url": "https://www.youtube.com/watch?v=dQ60Lu3jKsk"
+        },
+        {
+            "date": "2025-12-03",
+            "title": "Century Lithium: Rare Earths breakthrough Our new ion exchange process works",
+            "channel": "Proactive Investors",
+            "duration": "0:58",
+            "views": 881,
+            "url": "https://www.youtube.com/watch?v=aOMBXS53CfI"
+        },
+        {
+            "date": "2025-10-28",
+            "title": "Century Lithium Corp: Lithium extraction new plant & battery-grade production",
+            "channel": "Proactive Investors",
+            "duration": "0:39",
+            "views": 220,
+            "url": "https://www.youtube.com/watch?v=MA_nXxewgPM"
+        },
+        {
+            "date": "2025-01-21",
+            "title": "Century Lithium announces MOU with Orica for sodium hydroxide offtake agreement",
+            "channel": "Proactive Investors",
+            "duration": "4:46",
+            "views": 591,
+            "url": "https://www.youtube.com/watch?v=LcxmmdGcm0Y"
+        },
+        {
+            "date": "2024-08-30",
+            "title": "Mining News Flash with Century Lithium and Calibre Mining",
+            "channel": "Swiss Resource Capital AG",
+            "duration": "4:19",
+            "views": 2100,
+            "url": "https://www.youtube.com/watch?v=b9wXDsKfQd0"
+        },
+        {
+            "date": "2023-04-19",
+            "title": "Tips & Hints - Century Lithium Batteries",
+            "channel": "What's Up Downunder",
+            "duration": "0:35",
+            "views": 186,
+            "url": "https://www.youtube.com/watch?v=d8xm0fUPdJs"
+        },
+        {
+            "date": "2023-05-25",
+            "title": "Century Lithium confirms 2nd production of battery grade lithium from Clayton Valley Project",
+            "channel": "Proactive Investors",
+            "duration": "4:14",
+            "views": 1550,
+            "url": "https://www.youtube.com/watch?v=CM3fGtZv4T8"
+        },
+        {
+            "date": "2024-04-29",
+            "title": "Century Lithium Unveils Robust Feasibility Study Results for Clayton Valley Lithium Project",
+            "channel": "Proactive Investors",
+            "duration": "4:34",
+            "views": 442,
+            "url": "https://www.youtube.com/watch?v=nUKjH0-bBbM"
+        },
+        {
+            "date": "2025-04-30",
+            "title": "Century Lithium advances Angel Island project to support U.S. supply chain",
+            "channel": "Proactive Investors",
+            "duration": "5:11",
+            "views": 556,
+            "url": "https://www.youtube.com/watch?v=hOjelTLQ9lM"
+        },
+        {
+            "date": "2023-03-30",
+            "title": "Become an Early Mover in Century Lithium",
+            "channel": "channelchek",
+            "duration": "0:28",
+            "views": 323,
+            "url": "https://www.youtube.com/watch?v=wYz8BRiz0Tc"
+        },
+        {
+            "date": "2023-08-17",
+            "title": "Century Lithium: Good Progress with Partner Koch Technology Solutions at the Pilot Plant",
+            "channel": "Swiss Resource Capital AG",
+            "duration": "3:56",
+            "views": 2033,
+            "url": "https://www.youtube.com/watch?v=MyxYoKBN8io"
+        },
+        {
+            "date": "2024-08-30",
+            "title": "Bergbau-Nachrichten mit Century Lithium und Calibre Mining",
+            "channel": "Swiss Resource Capital AG",
+            "duration": "4:26",
+            "views": 1874,
+            "url": "https://www.youtube.com/watch?v=65-tnSKWST8"
+        },
+        {
+            "date": "2023-05-24",
+            "title": "Mining Newsflash with M&A Activities in the Lithium Sector, Century Lithium and Ion Energy",
+            "channel": "Swiss Resource Capital AG",
+            "duration": "3:25",
+            "views": 406,
+            "url": "https://www.youtube.com/watch?v=9ze89z5hOfA"
+        },
     ],
 }

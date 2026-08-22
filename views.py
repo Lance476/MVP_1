@@ -10,16 +10,19 @@ import re
 import streamlit as st
 import yfinance as yf
 
-from config import COMPANIES, DEFAULT_COMPANY, LIT_LABEL, STAGE_ORDER, STAGE_SHORT_MAP, TIMELINE_DATA
+from config import COMPANIES, DEFAULT_COMPANY, LIT_LABEL, STAGE_ORDER, STAGE_SHORT_MAP, STOCK_CLUSTERS, TIMELINE_DATA, YOUTUBE_VIDEOS
 from data import (
     company_term_map,
+    get_cluster_stock_data,
     get_correlation_data,
     get_dashboard_metrics,
     get_feedback_email,
     get_google_trends,
     get_market_cap_data,
     get_monthly_search_pattern,
+    get_search_volume_data,
     get_stock_data,
+    get_trends_snapshot_info,
     build_company_financials,
     load_financial_data,
     load_study_data,
@@ -117,52 +120,21 @@ def render_dashboard(companies=None):
                 '>{COMPANIES[company]['yf_ticker']}</div>
                 """, unsafe_allow_html=True)
 
-                # Price and return on same line - more compact
+                # Price, return and volume on one line - clean and compact
                 price_color = "#27AE60" if m['return_30d'] >= 0 else "#E74C3C"
+                vol_change = m.get('volume_change', 0)
+                vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
+
                 st.markdown(f"""
                 <div style='
                     display: flex;
                     align-items: baseline;
                     gap: 10px;
-                    margin-bottom: 8px;
                 '>
-                    <span style='
-                        font-size: 22px;
-                        font-weight: 600;
-                        color: #1a1a2e;
-                        letter-spacing: -0.5px;
-                    '>${m['current']:.2f}</span>
-                    <span style='
-                        font-size: 13px;
-                        color: {price_color};
-                        font-weight: 500;
-                    '>{m['return_30d']:+.1f}%</span>
-                    <span style='
-                        font-size: 10px;
-                        color: #bbb;
-                        font-weight: 400;
-                    '>30d</span>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Volume and Search on same line - clean and compact
-                vol_change = m.get('volume_change', 0)
-                vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
-                search_change = m.get('search_change', 0)
-                search_color = "#27AE60" if search_change >= 0 else "#E74C3C"
-                search_current = m.get('search_current', 0)
-
-                st.markdown(f"""
-                <div style='
-                    display: flex;
-                    gap: 16px;
-                    font-size: 12px;
-                    color: #777;
-                    padding-top: 6px;
-                    border-top: 1px solid #f0f0f0;
-                '>
-                    <span>Vol <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
-                    <span>Search <span style='font-weight: 500; color: #1a1a2e;'>{search_current:.0f}</span> <span style='color: {search_color};'>({search_change:+.0f})</span></span>
+                    <span style='font-size: 22px; font-weight: 600; color: #1a1a2e;'>${m['current']:.2f}</span>
+                    <span style='font-size: 13px; color: {price_color}; font-weight: 500;'>{m['return_30d']:+.1f}%</span>
+                    <span style='font-size: 11px; color: #777;'>| Vol <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
+                    <span style='font-size: 10px; color: #bbb;'>30d</span>
                 </div>
                 """, unsafe_allow_html=True)
     else:
@@ -189,52 +161,21 @@ def render_dashboard(companies=None):
             '>{COMPANIES[company]['yf_ticker']}</div>
             """, unsafe_allow_html=True)
 
-            # Price and return - smaller, more refined
+            # Price, return and volume on one line - clean and compact
             price_color = "#27AE60" if m['return_30d'] >= 0 else "#E74C3C"
+            vol_change = m.get('volume_change', 0)
+            vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
+
             st.markdown(f"""
             <div style='
                 display: flex;
                 align-items: baseline;
                 gap: 10px;
-                margin-bottom: 6px;
             '>
-                <span style='
-                    font-size: 24px;
-                    font-weight: 600;
-                    color: #1a1a2e;
-                    letter-spacing: -0.5px;
-                '>${m['current']:.2f}</span>
-                <span style='
-                    font-size: 14px;
-                    color: {price_color};
-                    font-weight: 500;
-                '>{m['return_30d']:+.1f}%</span>
-                <span style='
-                    font-size: 10px;
-                    color: #bbb;
-                    font-weight: 400;
-                '>30d</span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Volume and Search - clean and compact
-            vol_change = m.get('volume_change', 0)
-            vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
-            search_change = m.get('search_change', 0)
-            search_color = "#27AE60" if search_change >= 0 else "#E74C3C"
-            search_current = m.get('search_current', 0)
-
-            st.markdown(f"""
-            <div style='
-                display: flex;
-                gap: 20px;
-                font-size: 12px;
-                color: #777;
-                padding-top: 6px;
-                border-top: 1px solid #f0f0f0;
-            '>
-                <span>Volume <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
-                <span>Search <span style='font-weight: 500; color: #1a1a2e;'>{search_current:.0f}</span> <span style='color: {search_color};'>({search_change:+.0f})</span></span>
+                <span style='font-size: 22px; font-weight: 600; color: #1a1a2e;'>${m['current']:.2f}</span>
+                <span style='font-size: 13px; color: {price_color}; font-weight: 500;'>{m['return_30d']:+.1f}%</span>
+                <span style='font-size: 11px; color: #777;'>| Vol <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
+                <span style='font-size: 10px; color: #bbb;'>30d</span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -284,27 +225,51 @@ def render_dashboard(companies=None):
 
 
 def render_stock_chart(companies=None):
-    """Render the stock price chart (selected companies only)."""
+    """Render the stock price charts grouped into 3 clusters.
+
+    Cluster 1: Nevada Lithium Juniors
+    Cluster 2: Canadian Lithium Juniors
+    Cluster 3: Australian Producers + Sprott ETF benchmark
+    """
     import altair as alt
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    is_compare = len(companies) > 1
+    cluster_data = get_cluster_stock_data()
 
-    if is_compare:
-        st.markdown("**Stock Price — Comparison**")
-    else:
-        st.markdown("**Stock Price**")
+    # Predefined colors per cluster for consistency
+    cluster_colors = {
+        "Nevada Juniors": [
+            "#2E86C1", "#F39C12", "#27AE60", "#8E44AD",
+            "#E67E22", "#16A085", "#C0392B",
+        ],
+        "Canadian Juniors": [
+            "#1A5276", "#148F77", "#B03A2E",
+        ],
+        "Australian Producers + Benchmark": [
+            "#D35400", "#7D3C98", "#1B4F72", "#F1C40F",
+        ],
+    }
 
-    data = get_stock_data(companies)
+    for cluster_key, cluster_info in STOCK_CLUSTERS.items():
+        data = cluster_data.get(cluster_key)
+        if data is None or data.empty:
+            st.markdown(f"**{cluster_info['label']}**")
+            st.info("No stock data available for this cluster.")
+            continue
 
-    if not data.empty:
-        chart = alt.Chart(data).mark_line().encode(
+        color_scale = alt.Scale(
+            domain=list(cluster_info["members"].keys()),
+            range=cluster_colors.get(cluster_key, ["#95A5A6"] * len(cluster_info["members"]))
+        )
+
+        chart = alt.Chart(data).mark_line(strokeWidth=2, point=False).encode(
             x=alt.X("Date:T", axis=alt.Axis(format="%Y", tickCount="year", title="Year")),
-            y=alt.Y("Close:Q", title="Close ($)"),
+            y=alt.Y("Normalized:Q", title="Indexed (start = 100)", scale=alt.Scale(zero=False)),
             color=alt.Color(
                 "Ticker:N",
-                title="Ticker",
+                title=None,
+                scale=color_scale,
                 legend=alt.Legend(
                     orient="right",
                     title=None,
@@ -315,13 +280,49 @@ def render_stock_chart(companies=None):
             tooltip=[
                 alt.Tooltip("Ticker:N"),
                 alt.Tooltip("Date:T", title="Date", format="%Y-%m-%d"),
-                alt.Tooltip("Close:Q", title="Close", format=".2f"),
+                alt.Tooltip("Normalized:Q", title="Indexed", format=".1f"),
             ]
-        )
-        st.altair_chart(chart, use_container_width=True)
-    else:
-        st.info("No stock data available")
+        ).properties(height=280)
 
+        st.markdown(f"**{cluster_info['label']}**")
+        st.altair_chart(chart, use_container_width=True)
+
+    # ------------------------------------------------------------------
+    # Simple cluster comparison: 12-month performance per cluster
+    # ------------------------------------------------------------------
+    st.markdown("**12-Month Performance — Cluster Comparison**")
+
+    summary_rows = []
+    for cluster_key, cluster_info in STOCK_CLUSTERS.items():
+        data = cluster_data.get(cluster_key)
+        if data is None or data.empty:
+            continue
+
+        # Latest normalized value per member (indexed to 100 at start)
+        latest_perf = (
+            data.sort_values("Date")
+            .groupby("Ticker")["Normalized"]
+            .last()
+            .sort_values(ascending=False)
+        )
+        if latest_perf.empty:
+            continue
+
+        best = latest_perf.index[0]
+        best_val = latest_perf.iloc[0]
+        avg_val = latest_perf.mean()
+
+        summary_rows.append({
+            "Cluster": cluster_info["label"],
+            "Avg (index)": f"{avg_val:.0f}",
+            "Best performer": best,
+            "Best (index)": f"{best_val:.0f}",
+        })
+
+    if summary_rows:
+        summary_df = pd.DataFrame(summary_rows)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        
 
 def render_comparison_snapshot(companies):
     """A compact 'at-a-glance' summary of the selected companies.
@@ -458,7 +459,6 @@ def render_project_studies(companies=None):
 
                     # Compact faceted chart — each ratio has its own scale
                     chart = alt.Chart(ratio_melted).mark_line(
-                        point=alt.OverlayMarkDef(size=30, filled=True, stroke='white', strokeWidth=1),
                         strokeWidth=2,
                         color=COMPANIES[company]['color']
                     ).encode(
@@ -510,23 +510,23 @@ def render_project_studies(companies=None):
             col1, col2 = st.columns(2)
 
             # ------------------------------------------------------------------
-            # GRAPH 1: Recovery & Production (dual-axis, thin lines, no markers)
+            # GRAPH 1: Production & Mine Life (dual-axis, thin lines, no markers)
             # ------------------------------------------------------------------
             with col1:
-                st.markdown("**Recovery & Production**")
+                st.markdown("**Production & Mine Life**")
 
                 ops_melted = df_studies[['Stage_Display',
-                                          'Metallurgical_Recovery_%',
-                                          'Avg_Annual_Production_tpa']].copy().melt(
+                                          'Avg_Annual_Production_tpa',
+                                          'Life_of_Mine_Years']].copy().melt(
                     id_vars=['Stage_Display'],
-                    value_vars=['Metallurgical_Recovery_%', 'Avg_Annual_Production_tpa'],
+                    value_vars=['Avg_Annual_Production_tpa', 'Life_of_Mine_Years'],
                     var_name='Metric',
                     value_name='Value'
                 ).dropna(subset=['Value'])
 
                 ops_melted['Metric'] = ops_melted['Metric'].map({
-                    'Metallurgical_Recovery_%': 'Recovery (%)',
-                    'Avg_Annual_Production_tpa': 'Production (tpa)'
+                    'Avg_Annual_Production_tpa': 'Production (tpa)',
+                    'Life_of_Mine_Years': 'Mine Life (years)'
                 })
                 ops_melted['Stage_Short'] = ops_melted['Stage_Display'].map(STAGE_SHORT_MAP)
 
@@ -537,29 +537,13 @@ def render_project_studies(companies=None):
                             axis=alt.Axis(labelFontSize=10, labelFontWeight='bold', titlePadding=8))
                 )
 
-                recovery_line = base_ops.transform_filter(alt.datum.Metric == 'Recovery (%)').mark_line(
-                    strokeWidth=2
-                ).encode(
-                    y=alt.Y('Value:Q', title='Recovery (%)', scale=alt.Scale(zero=False),
-                            axis=alt.Axis(labelFontSize=9)),
-                    color=alt.Color('Metric:N',
-                                    scale=alt.Scale(domain=['Recovery (%)', 'Production (tpa)'],
-                                                  range=['#2E86C1', '#F39C12']),
-                                    legend=alt.Legend(orient="bottom", title=None)),
-                    tooltip=[
-                        alt.Tooltip('Stage_Display:N', title='Study'),
-                        alt.Tooltip('Metric:N', title='Metric'),
-                        alt.Tooltip('Value:Q', title='Recovery (%)', format='.1f')
-                    ]
-                )
-
                 production_line = base_ops.transform_filter(alt.datum.Metric == 'Production (tpa)').mark_line(
                     strokeWidth=2
                 ).encode(
                     y=alt.Y('Value:Q', title='Production (tpa)', scale=alt.Scale(zero=False),
                             axis=alt.Axis(labelFontSize=9)),
                     color=alt.Color('Metric:N',
-                                    scale=alt.Scale(domain=['Recovery (%)', 'Production (tpa)'],
+                                    scale=alt.Scale(domain=['Production (tpa)', 'Mine Life (years)'],
                                                   range=['#2E86C1', '#F39C12']),
                                     legend=alt.Legend(orient="bottom", title=None)),
                     tooltip=[
@@ -569,8 +553,24 @@ def render_project_studies(companies=None):
                     ]
                 )
 
+                mine_life_line = base_ops.transform_filter(alt.datum.Metric == 'Mine Life (years)').mark_line(
+                    strokeWidth=2
+                ).encode(
+                    y=alt.Y('Value:Q', title='Mine Life (years)', scale=alt.Scale(zero=False),
+                            axis=alt.Axis(labelFontSize=9)),
+                    color=alt.Color('Metric:N',
+                                    scale=alt.Scale(domain=['Production (tpa)', 'Mine Life (years)'],
+                                                  range=['#2E86C1', '#F39C12']),
+                                    legend=alt.Legend(orient="bottom", title=None)),
+                    tooltip=[
+                        alt.Tooltip('Stage_Display:N', title='Study'),
+                        alt.Tooltip('Metric:N', title='Metric'),
+                        alt.Tooltip('Value:Q', title='Mine Life (years)', format='.0f')
+                    ]
+                )
+
                 st.altair_chart(
-                    alt.layer(recovery_line, production_line)
+                    alt.layer(production_line, mine_life_line)
                        .resolve_scale(y='independent')
                        .resolve_legend(color='shared')
                        .properties(height=chart_h),
@@ -578,9 +578,82 @@ def render_project_studies(companies=None):
                 )
 
             # ------------------------------------------------------------------
-            # GRAPH 2: M&I & Inferred (shared Mt scale)
+            # GRAPH 2: Grade & Recovery (dual-axis, thin lines, no markers)
             # ------------------------------------------------------------------
             with col2:
+                st.markdown("**Grade & Recovery**")
+
+                gr_melted = df_studies[['Stage_Display',
+                                          'Average_Lithium_Grade',
+                                          'Metallurgical_Recovery_%']].copy().melt(
+                    id_vars=['Stage_Display'],
+                    value_vars=['Average_Lithium_Grade', 'Metallurgical_Recovery_%'],
+                    var_name='Metric',
+                    value_name='Value'
+                ).dropna(subset=['Value'])
+
+                gr_melted['Metric'] = gr_melted['Metric'].map({
+                    'Average_Lithium_Grade': 'Grade (ppm)',
+                    'Metallurgical_Recovery_%': 'Recovery (%)'
+                })
+                gr_melted['Stage_Short'] = gr_melted['Stage_Display'].map(STAGE_SHORT_MAP)
+
+                base_gr = alt.Chart(gr_melted).encode(
+                    x=alt.X('Stage_Short:N',
+                            title=None,
+                            sort=STAGE_ORDER,
+                            axis=alt.Axis(labelFontSize=10, labelFontWeight='bold', titlePadding=8))
+                )
+
+                grade_line = base_gr.transform_filter(alt.datum.Metric == 'Grade (ppm)').mark_line(
+                    strokeWidth=2
+                ).encode(
+                    y=alt.Y('Value:Q', title='Grade (ppm)', scale=alt.Scale(zero=False),
+                            axis=alt.Axis(labelFontSize=9)),
+                    color=alt.Color('Metric:N',
+                                    scale=alt.Scale(domain=['Grade (ppm)', 'Recovery (%)'],
+                                                  range=['#2E86C1', '#F39C12']),
+                                    legend=alt.Legend(orient="bottom", title=None)),
+                    tooltip=[
+                        alt.Tooltip('Stage_Display:N', title='Study'),
+                        alt.Tooltip('Metric:N', title='Metric'),
+                        alt.Tooltip('Value:Q', title='Grade (ppm)', format=',.0f')
+                    ]
+                )
+
+                recovery_line = base_gr.transform_filter(alt.datum.Metric == 'Recovery (%)').mark_line(
+                    strokeWidth=2
+                ).encode(
+                    y=alt.Y('Value:Q', title='Recovery (%)', scale=alt.Scale(zero=False),
+                            axis=alt.Axis(labelFontSize=9)),
+                    color=alt.Color('Metric:N',
+                                    scale=alt.Scale(domain=['Grade (ppm)', 'Recovery (%)'],
+                                                  range=['#2E86C1', '#F39C12']),
+                                    legend=alt.Legend(orient="bottom", title=None)),
+                    tooltip=[
+                        alt.Tooltip('Stage_Display:N', title='Study'),
+                        alt.Tooltip('Metric:N', title='Metric'),
+                        alt.Tooltip('Value:Q', title='Recovery (%)', format='.1f')
+                    ]
+                )
+
+                st.altair_chart(
+                    alt.layer(grade_line, recovery_line)
+                       .resolve_scale(y='independent')
+                       .resolve_legend(color='shared')
+                       .properties(height=chart_h),
+                    use_container_width=True
+                )
+
+            # ------------------------------------------------------------------
+            # ROW 2: M&I & Inferred (shared Mt scale)
+            # ------------------------------------------------------------------
+            col1, col2 = st.columns(2)
+
+            # ------------------------------------------------------------------
+            # GRAPH 3: M&I & Inferred
+            # ------------------------------------------------------------------
+            with col1:
                 st.markdown("**M&I & Inferred**")
 
                 res_melted = df_studies[['Stage_Display',
@@ -621,69 +694,6 @@ def render_project_studies(companies=None):
                 ).properties(height=chart_h)
 
                 st.altair_chart(res_chart, use_container_width=True)
-
-            # ------------------------------------------------------------------
-            # ROW 2: Mine Life | Grade
-            # ------------------------------------------------------------------
-            col1, col2 = st.columns(2)
-
-            # ------------------------------------------------------------------
-            # GRAPH 3: Mine Life
-            # ------------------------------------------------------------------
-            with col1:
-                st.markdown("**Mine Life**")
-
-                mine_life_data = df_studies[['Stage_Display', 'Life_of_Mine_Years']].copy().dropna(subset=['Life_of_Mine_Years'])
-                mine_life_data['Stage_Short'] = mine_life_data['Stage_Display'].map(STAGE_SHORT_MAP)
-
-                mine_life_chart = alt.Chart(mine_life_data).mark_line(
-                    strokeWidth=2,
-                    color=COMPANIES[company]['color']
-                ).encode(
-                    x=alt.X('Stage_Short:N',
-                            title=None,
-                            sort=STAGE_ORDER,
-                            axis=alt.Axis(labelFontSize=10, labelFontWeight='bold', titlePadding=8)),
-                    y=alt.Y('Life_of_Mine_Years:Q',
-                            title='Years',
-                            scale=alt.Scale(zero=False),
-                            axis=alt.Axis(labelFontSize=9)),
-                    tooltip=[
-                        alt.Tooltip('Stage_Display:N', title='Study'),
-                        alt.Tooltip('Life_of_Mine_Years:Q', title='Mine Life (years)', format='.0f')
-                    ]
-                ).properties(height=chart_h)
-
-                st.altair_chart(mine_life_chart, use_container_width=True)
-
-            # ------------------------------------------------------------------
-            # GRAPH 4: Grade
-            # ------------------------------------------------------------------
-            with col2:
-                st.markdown("**Grade**")
-
-                grade_data = df_studies[['Stage_Display', 'Average_Lithium_Grade']].copy().dropna(subset=['Average_Lithium_Grade'])
-                grade_data['Stage_Short'] = grade_data['Stage_Display'].map(STAGE_SHORT_MAP)
-
-                grade_chart = alt.Chart(grade_data).mark_line(
-                    strokeWidth=2,
-                    color=COMPANIES[company]['color']
-                ).encode(
-                    x=alt.X('Stage_Short:N',
-                            title=None,
-                            sort=STAGE_ORDER,
-                            axis=alt.Axis(labelFontSize=10, labelFontWeight='bold', titlePadding=8)),
-                    y=alt.Y('Average_Lithium_Grade:Q',
-                            title='Grade (ppm)',
-                            scale=alt.Scale(zero=False),
-                            axis=alt.Axis(labelFontSize=9)),
-                    tooltip=[
-                        alt.Tooltip('Stage_Display:N', title='Study'),
-                        alt.Tooltip('Average_Lithium_Grade:Q', title='Grade (ppm)', format='.0f')
-                    ]
-                ).properties(height=chart_h)
-
-                st.altair_chart(grade_chart, use_container_width=True)
 
         with tab3:
             st.subheader("Complete Study Data")
@@ -1035,68 +1045,26 @@ def render_search_analysis(companies=None):
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    is_compare = len(companies) > 1
-
     # ------------------------------------------------------------------
-    # Chart 1: Google Trends — one chart PER search term (per company),
-    # so every term is shown on its own independent 0-100 scale.
-    # ------------------------------------------------------------------
-    if is_compare:
-        st.markdown("**Search Interest Over Time — Comparison**")
-    else:
-        st.markdown("**Search Interest Over Time**")
-
-    trends = get_google_trends(companies)
-
-    if trends is not None and not trends.empty:
-        for company in companies:
-            comp_terms = [t for t in COMPANIES[company]['search_terms']
-                          if t in trends.columns]
-            if not comp_terms:
-                continue
-
-            color = COMPANIES[company]['color']
-            short = COMPANIES[company]['short_name']
-
-            term_cols = st.columns(len(comp_terms))
-            for col, term in zip(term_cols, comp_terms):
-                with col:
-                    st.markdown(f"**{short} · {term}**")
-                    term_df = trends[['date', term]].dropna(subset=[term])
-                    if term_df.empty:
-                        st.caption("No data for this term")
-                        continue
-
-                    term_chart = alt.Chart(term_df).mark_line(
-                        strokeWidth=2,
-                        color=color
-                    ).encode(
-                        x=alt.X("date:T", axis=alt.Axis(format="%Y", tickCount="year", title="Year")),
-                        y=alt.Y(f"{term}:Q", title="Interest (0-100)",
-                                scale=alt.Scale(domain=[0, 100])),
-                        tooltip=[
-                            alt.Tooltip("date:T", title="Date", format="%Y-%m-%d"),
-                            alt.Tooltip(f"{term}:Q", title="Interest"),
-                        ]
-                    ).properties(height=180)
-                    st.altair_chart(term_chart, use_container_width=True)
-    else:
-        st.info("No search data available (add SerpAPI key)")
-
-    # ------------------------------------------------------------------
-    # Row 2: monthly pattern + correlation
+    # Two charts side by side:
+    #   Left:  Interest vs Market Performance (per company)
+    #   Right: Google Ads Search Volume (company + Nevada Lithium + lithium stocks)
     # ------------------------------------------------------------------
     col1, col2 = st.columns(2)
 
     with col1:
-        # Average monthly search interest - grouped bar chart
-        st.markdown("**Average Monthly Search Interest**")
-        render_monthly_pattern(companies)
-
-    with col2:
-        # Chart 2: Correlation (each company vs LIT)
-        st.markdown("**Interest vs Market Performance**")
+        st.markdown("**Google Trends**")
         corr_data, _ = get_correlation_data(companies)
+
+        # Show when the pinned trends snapshot was taken and when it refreshes.
+        # The Google Trends graph (SerpApi) is intentionally frozen for ~30 days
+        # so it does not change on every code patch/deploy.
+        snapshot_date, expires_date = get_trends_snapshot_info()
+        if snapshot_date is not None and expires_date is not None:
+            st.caption(
+                f"🔒 Graph fixed since {snapshot_date.strftime('%d %b %Y')} — "
+                f"refreshes on {expires_date.strftime('%d %b %Y')}"
+            )
 
         if corr_data is not None and not corr_data.empty:
             color_scale = {c: COMPANIES[c]['color'] for c in companies}
@@ -1104,14 +1072,13 @@ def render_search_analysis(companies=None):
             # Melt for proper legend (corr_data already carries Company)
             df_melted = corr_data.melt(
                 id_vars=['Date', 'Company'],
-                value_vars=['Lit_Indexed', 'Search_Indexed'],
+                value_vars=['Search_Indexed'],
                 var_name='Series',
                 value_name='Value'
             )
 
             # Clean labels
             df_melted['Series'] = df_melted['Series'].map({
-                'Lit_Indexed': LIT_LABEL,
                 'Search_Indexed': 'Search'
             })
 
@@ -1127,57 +1094,59 @@ def render_search_analysis(companies=None):
                     title=None,
                     legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
                 ),
-                strokeDash=alt.StrokeDash(
-                    'Series:N',
-                    scale=alt.Scale(
-                        domain=[LIT_LABEL, 'Search'],
-                        range=[[], [5, 5]]
-                    ),
-                    legend=alt.Legend(orient="bottom", title=None, labelFontSize=9)
-                )
+                tooltip=[
+                    alt.Tooltip('Company:N', title='Company'),
+                    alt.Tooltip('Date:T', title='Date', format='%Y-%m-%d'),
+                    alt.Tooltip('Value:Q', title='Search Interest', format='.1f')
+                ]
             ).properties(height=250)
 
             st.altair_chart(chart, use_container_width=True)
         else:
             st.info("No correlation data available")
 
-    # Source
-    st.caption("Source: Google Trends. Each search term is shown on its own relative interest scale (0-100).")
+    with col2:
+        st.markdown("**Google Ads Search Volume**")
+        sv_data = get_search_volume_data(companies)
 
+        if sv_data is not None and not sv_data.empty:
+            # Color scale: company color for the firm's own line, fixed colors
+            # for the two benchmarks.
+            color_scale = {c: COMPANIES[c]['color'] for c in companies}
+            color_scale["lithium stocks"] = "#95A5A6"
+            color_scale["Nevada Lithium"] = "#E74C3C"
 
+            # Chronological month order (the labels are strings like "8/2025",
+            # which would otherwise sort alphabetically).
+            month_order = [
+                "8/2025", "9/2025", "10/2025", "11/2025", "12/2025",
+                "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026",
+            ]
 
+            sv_chart = alt.Chart(sv_data).mark_line(
+                strokeWidth=2
+            ).encode(
+                x=alt.X('Month:N', title=None, sort=month_order,
+                        axis=alt.Axis(labelAngle=-45, labelFontSize=9)),
+                y=alt.Y('Search_Volume:Q', title='Search Volume',
+                        scale=alt.Scale(zero=False)),
+                color=alt.Color(
+                    'Company:N',
+                    scale=alt.Scale(domain=list(color_scale.keys()),
+                                    range=list(color_scale.values())),
+                    title=None,
+                    legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
+                ),
+                tooltip=[
+                    alt.Tooltip('Company:N', title='Series'),
+                    alt.Tooltip('Month:N', title='Month'),
+                    alt.Tooltip('Search_Volume:Q', title='Search Volume', format=',.0f')
+                ]
+            ).properties(height=250)
 
-
-def render_news_section(companies=None):
-    """Render news section for the selected company/companies."""
-    if companies is None:
-        companies = list(COMPANIES.keys())
-
-    st.subheader("Latest News & Press Releases across the web")
-
-    for company in companies:
-        ticker = COMPANIES[company]['yf_ticker']
-        st.markdown(f"**{company}** ({ticker})")
-        try:
-            news_items = yf.Ticker(ticker).news or []
-        except Exception:
-            news_items = []
-
-        if not news_items:
-            st.info(f"No recent news found via Yahoo Finance for {ticker}.")
+            st.altair_chart(sv_chart, use_container_width=True)
         else:
-            for n in news_items[:5]:
-                content = n.get("content", n)
-                title = content.get("title", "Untitled")
-                link = content.get("canonicalUrl", {}).get("url") or content.get("clickThroughUrl", {}).get("url", "#")
-                publisher = content.get("provider", {}).get("displayName", "Unknown source")
-
-                st.markdown(f"• **[{title}]({link})** — *{publisher}*")
-                st.markdown("")
-        st.markdown("")
-
-
-
+            st.info("No search volume data available")
 
 
 def render_qa_section():
@@ -1705,14 +1674,6 @@ def render_timeline(companies=None):
 
     timeline_df = pd.DataFrame(all_rows)
 
-    # Show the table (grouped by company when in comparison)
-    display_cols = ['Company', 'Study', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
-    if not is_compare:
-        display_cols = ['Study', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
-
-    present_cols = [c for c in display_cols if c in timeline_df.columns]
-    st.dataframe(timeline_df[present_cols], use_container_width=True, hide_index=True)
-
     # ------------------------------------------------------------------
     # Build long-format event data for the chart
     # ------------------------------------------------------------------
@@ -1938,13 +1899,17 @@ def render_timeline(companies=None):
 
     st.plotly_chart(fig, use_container_width=True, key="timeline_chart")
 
+    # Show the table (grouped by company when in comparison)
+    display_cols = ['Company', 'Study', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
+    if not is_compare:
+        display_cols = ['Study', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
+
+    present_cols = [c for c in display_cols if c in timeline_df.columns]
+    st.dataframe(timeline_df[present_cols], use_container_width=True, hide_index=True)
+
     # ====================================================================
     # COMMITMENT SENTENCES (uitklapbaar, compact)
     # ====================================================================
-    st.markdown("---")
-    st.markdown("**Commitment Sentences**")
-    st.caption("Click a milestone to view the full commitment sentence behind the expectation.")
-
     for company in companies:
         rows = TIMELINE_DATA.get(company, [])
         if not rows:
@@ -2057,6 +2022,11 @@ def apply_styles():
         gap: 0.5rem !important;
     }
     
+    /* Tighten vertical spacing to remove large white gaps between sections */
+    [data-testid="stVerticalBlock"] {
+        gap: 0.35rem !important;
+    }
+    
     /* Make dataframes more compact */
     .stDataFrame {
         border: none !important;
@@ -2134,65 +2104,105 @@ def apply_styles():
 render_studies = render_project_studies
 
 
-def render_sentiment_analysis(is_compare):
-    """Sentiment Analysis section (press releases over time)."""
-    st.subheader("Sentiment Analysis")
-    st.caption("Press releases & interviews over time")
-
-    if not is_compare:
-        # Press release dates from the past year (Century Lithium; MVP placeholder)
-        press_release_dates = [
-            "July 24, 2025",
-            "August 6, 2025",
-            "August 22, 2025",
-            "August 29, 2025",
-            "September 18, 2025",
-            "September 22, 2025",
-            "October 1, 2025",
-            "October 17, 2025",
-            "October 20, 2025",
-            "October 27, 2025",
-            "November 24, 2025",
-            "November 25, 2025",
-            "December 2, 2025",
-            "December 11, 2025",
-            "December 22, 2025",
-            "January 14, 2026",
-            "February 23, 2026",
-            "March 9, 2026",
-            "March 10, 2026",
-            "March 11, 2026",
-            "March 16, 2026",
-            "March 23, 2026",
-            "April 9, 2026",
-            "April 23, 2026",
-            "May 4, 2026",
-            "May 5, 2026",
-            "July 14, 2026",
-            "July 15, 2026",
-        ]
-
-        sentiment_df = pd.DataFrame({
-            "Date": pd.to_datetime(press_release_dates),
-            "Event": [f"PR #{i+1}" for i in range(len(press_release_dates))],
-            "Sentiment": ["Pending"] * len(press_release_dates),
-        })
-        sentiment_df["Date"] = sentiment_df["Date"].dt.strftime("%b %d, %Y")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.dataframe(
-                sentiment_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Date": st.column_config.TextColumn("Date", width="medium"),
-                    "Event": st.column_config.TextColumn("Event", width="medium"),
-                    "Sentiment": st.column_config.TextColumn("Score", width="small"),
-                },
-            )
+def _parse_duration_minutes(duration_str):
+    """Parse a YouTube duration string ('M:SS' or 'H:MM:SS') into minutes."""
+    try:
+        parts = [int(p) for p in str(duration_str).split(":")]
+    except ValueError:
+        return None
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+    elif len(parts) == 2:
+        hours, minutes, seconds = 0, parts[0], parts[1]
     else:
-        st.caption("Sentiment analysis per company to be added for comparison mode.")
+        return None
+    return round(hours * 60 + minutes + seconds / 60, 1)
+
+
+def render_sentiment_analysis(companies=None):
+    """Sentiment Analysis section (YouTube interviews & coverage over time)."""
+    if companies is None:
+        companies = list(COMPANIES.keys())
+    is_compare = len(companies) > 1
+
+    st.subheader("Sentiment Analysis")
+    st.caption("YouTube interviews & coverage over time")
+
+    # ------------------------------------------------------------------
+    # Collect YouTube video records for the selected companies (config.py)
+    # ------------------------------------------------------------------
+    rows = []
+    no_data = []
+    for company in companies:
+        videos = YOUTUBE_VIDEOS.get(company, [])
+        if not videos:
+            no_data.append(company)
+            continue
+        for v in videos:
+            rows.append({
+                "Company": company,
+                "Date": v["date"],
+                "Title": v["title"],
+                "Channel": v["channel"],
+                "Duration": v["duration"],
+                "Minutes": _parse_duration_minutes(v["duration"]),
+                "Views": int(v["views"]),
+                "URL": v["url"],
+            })
+
+    if not rows:
+        st.info("No YouTube interview data available for the selected company(ies) yet.")
+        return
+
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.sort_values("Date", ascending=True).reset_index(drop=True)
+
+    # ------------------------------------------------------------------
+    # 1. Video table (newest first)
+    # ------------------------------------------------------------------
+    table_df = df.copy()
+    table_df["Date"] = table_df["Date"].dt.strftime("%Y-%m-%d")
+    st.dataframe(
+        table_df[["Date", "Title", "Channel", "Duration", "Views", "URL"]],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Date": st.column_config.TextColumn("Date", width="small"),
+            "Title": st.column_config.TextColumn("Title", width="large"),
+            "Channel": st.column_config.TextColumn("Channel", width="medium"),
+            "Duration": st.column_config.TextColumn("Duration", width="small"),
+            "Views": st.column_config.NumberColumn("Views", format="%d", width="small"),
+            "URL": st.column_config.LinkColumn("Video", display_text="Watch ▶", width="small"),
+        },
+    )
+
+    # ------------------------------------------------------------------
+    # 2. Interview timeline chart: when (x-axis) × views (y-axis),
+    #    uniform blue bubbles (channel shown on hover)
+    # ------------------------------------------------------------------
+    st.markdown("**Interview Timeline — When & Views**")
+
+    chart = (
+        alt.Chart(df)
+        .mark_circle(opacity=0.75, stroke="white", strokeWidth=1, size=140, color="#1F77B4")
+        .encode(
+            x=alt.X("Date:T", title=None, axis=alt.Axis(format="%b %Y")),
+            y=alt.Y("Views:Q", title="Views", scale=alt.Scale(zero=False)),
+            tooltip=[
+                alt.Tooltip("Date:T", title="Date", format="%Y-%m-%d"),
+                alt.Tooltip("Title:N", title="Title"),
+                alt.Tooltip("Channel:N", title="Channel"),
+                alt.Tooltip("Duration:N", title="Duration"),
+                alt.Tooltip("Views:Q", title="Views", format=","),
+            ],
+        )
+        .properties(height=340)
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    if no_data:
+        st.caption(f"No YouTube data yet for: {', '.join(no_data)}.")
 
 
 def _link_button(label, url):

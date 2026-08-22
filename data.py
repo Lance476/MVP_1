@@ -42,7 +42,7 @@ import pandas as pd
 import yfinance as yf
 import streamlit as st
 
-from config import LIT_LABEL, LIT_TICKER
+from config import LIT_LABEL, LIT_TICKER, STOCK_CLUSTERS
 
 
 @st.cache_data(ttl=1800)  # Cache for 30 minutes
@@ -90,6 +90,48 @@ def get_stock_data(companies=None):
         return data
 
     return pd.DataFrame()
+
+
+@st.cache_data(ttl=604800)  # Cache for 7 days
+def get_cluster_stock_data():
+    """Fetch stock data for all three performance clusters.
+
+    Returns
+    -------
+    dict[str, pd.DataFrame]
+        {cluster_key: dataframe with Date, Close, Ticker columns}
+    """
+    def fetch_ticker(ticker):
+        """Fetch 12-month stock history from Yahoo Finance."""
+        try:
+            df = yf.Ticker(ticker).history(period="1y").reset_index()[["Date", "Close", "Volume"]]
+            if df is not None and not df.empty:
+                return df.reset_index(drop=True)
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+        return pd.DataFrame()
+
+    result = {}
+    for cluster_key, cluster in STOCK_CLUSTERS.items():
+        frames = []
+        for display, ticker in cluster["members"].items():
+            data = fetch_ticker(ticker)
+            if not data.empty:
+                data["Ticker"] = f"{display}"
+                # Normalize each ticker's Close to an index starting at 100
+                # so relative performance is comparable regardless of price.
+                data = data.sort_values("Date").copy()
+                first_close = data["Close"].iloc[0]
+                if first_close and first_close > 0:
+                    data["Normalized"] = data["Close"] / first_close * 100
+                else:
+                    data["Normalized"] = data["Close"]
+                frames.append(data)
+        if frames:
+            result[cluster_key] = pd.concat(frames, ignore_index=True)
+        else:
+            result[cluster_key] = pd.DataFrame()
+    return result
 
 
 import numpy as np
@@ -200,6 +242,8 @@ def get_market_cap_data(companies=None):
         return pd.DataFrame()
 
 
+import json
+import os
 import pandas as pd
 import requests
 import streamlit as st
@@ -207,6 +251,21 @@ import streamlit as st
 from config import COMPANIES
 
 SERPAPI_KEY = st.secrets.get("SERPAPI_KEY", "")
+
+# ============================================================================
+# GOOGLE TRENDS SNAPSHOT (PINNED ~30 DAYS)
+# ============================================================================
+# De Google Trends grafiek (via SerpApi) wordt bewust VASTGEZET voor 30 dagen.
+# De eerste keer dat de app draait (of nadat de snapshot verlopen is) wordt de
+# data via SerpApi opgehaald en weggeschreven naar trends_snapshot.csv +
+# trends_snapshot_meta.json. Die twee bestanden worden in git gecommit, zodat
+# elke Streamlit Cloud deploy exact dezelfde grafiek toont tot de 30 dagen om
+# zijn. Na 30 dagen haalt de app verse data op — commit de twee bestanden dan
+# opnieuw om de nieuwe snapshot vast te zetten.
+# ============================================================================
+TRENDS_SNAPSHOT_FILE = "trends_snapshot.csv"
+TRENDS_SNAPSHOT_META_FILE = "trends_snapshot_meta.json"
+TRENDS_SNAPSHOT_TTL_DAYS = 30
 
 
 def _parse_trends_timestamp(item):
@@ -316,10 +375,83 @@ def fetch_single_company_trends(company, search_terms):
     return None
 
 
+def _trends_snapshot_is_fresh():
+    """Return True when the pinned snapshot is still within the 30-day TTL."""
+    if not os.path.exists(TRENDS_SNAPSHOT_META_FILE):
+        return False
+    try:
+        with open(TRENDS_SNAPSHOT_META_FILE, "r") as f:
+            meta = json.load(f)
+        snapshot_date = pd.to_datetime(meta.get("snapshot_date"))
+        if pd.isna(snapshot_date):
+            return False
+        return (pd.Timestamp.now() - snapshot_date) <= pd.Timedelta(days=TRENDS_SNAPSHOT_TTL_DAYS)
+    except Exception as e:
+        print(f"trends snapshot meta read error: {e}")
+        return False
+
+
+def _load_trends_snapshot():
+    """Load the pinned trends DataFrame from trends_snapshot.csv."""
+    if not os.path.exists(TRENDS_SNAPSHOT_FILE):
+        return None
+    try:
+        df = pd.read_csv(TRENDS_SNAPSHOT_FILE)
+        if "date" not in df.columns:
+            return None
+        df["date"] = pd.to_datetime(df["date"])
+        return df
+    except Exception as e:
+        print(f"trends snapshot read error: {e}")
+        return None
+
+
+def _save_trends_snapshot(df):
+    """Persist the trends snapshot + timestamp so it survives future deploys."""
+    try:
+        df.to_csv(TRENDS_SNAPSHOT_FILE, index=False)
+        with open(TRENDS_SNAPSHOT_META_FILE, "w") as f:
+            json.dump({"snapshot_date": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
+    except Exception as e:
+        print(f"trends snapshot write error: {e}")
+
+
+def get_trends_snapshot_info():
+    """Return (snapshot_date, expires_date) for the pinned trends graph.
+
+    Used by views.py to show the user how long the graph stays fixed.
+    """
+    try:
+        if not os.path.exists(TRENDS_SNAPSHOT_META_FILE):
+            return None, None
+        with open(TRENDS_SNAPSHOT_META_FILE, "r") as f:
+            meta = json.load(f)
+        snapshot_date = pd.to_datetime(meta.get("snapshot_date"))
+        if pd.isna(snapshot_date):
+            return None, None
+        expires = snapshot_date + pd.Timedelta(days=TRENDS_SNAPSHOT_TTL_DAYS)
+        return snapshot_date, expires
+    except Exception:
+        return None, None
+
+
 def get_google_trends(companies=None):
-    """Get Google Trends data by combining per-company cached data."""
+    """Get Google Trends data, PINNED to a ~30-day snapshot.
+
+    The trends graph intentionally freezes for 30 days so it does not change
+    on every code patch/deploy. If a fresh snapshot exists it is returned
+    directly (no SerpApi call). Only after 30 days does the app re-fetch from
+    SerpApi and write a new snapshot (commit the two snapshot files to pin it
+    for another month).
+    """
     if companies is None:
         companies = list(COMPANIES.keys())
+
+    # Prefer the pinned snapshot while it is still fresh (< 30 days old)
+    if _trends_snapshot_is_fresh():
+        snapshot = _load_trends_snapshot()
+        if snapshot is not None and not snapshot.empty:
+            return snapshot
 
     all_data = []
     for company in companies:
@@ -335,7 +467,12 @@ def get_google_trends(companies=None):
     for df in all_data[1:]:
         combined = pd.merge(combined, df, on='date', how='outer')
 
-    return combined.sort_values('date').reset_index(drop=True)
+    combined = combined.sort_values('date').reset_index(drop=True)
+
+    # Pin this freshly fetched data for the next 30 days
+    _save_trends_snapshot(combined)
+
+    return combined
 
 
 import numpy as np
@@ -686,6 +823,48 @@ def get_monthly_search_pattern(companies=None):
         return None
 
     return pd.concat(frames, ignore_index=True)
+
+
+@st.cache_data(ttl=604800)
+def get_search_volume_data(companies=None):
+    """Google Ads search volume (monthly) for the selected companies.
+
+    Returns a long-format DataFrame with columns:
+        Month, Company, Search_Volume
+
+    For every selected company, the company's own line is included plus the
+    two sector benchmarks "lithium stocks" and "Nevada Lithium", so each
+    company's chart shows 3 lines.
+    """
+    from config import SEARCH_DATA
+
+    if companies is None:
+        companies = list(COMPANIES.keys())
+
+    # Benchmarks shown alongside every company's own line
+    benchmark_keys = ["lithium stocks", "Nevada Lithium"]
+
+    rows = []
+    for company in companies:
+        # The company's own series (if present in SEARCH_DATA)
+        series_keys = [company] + benchmark_keys
+        for key in series_keys:
+            data = SEARCH_DATA.get(key)
+            if data is None:
+                continue
+            months = data.get("months", [])
+            values = data.get("values", [])
+            for month, value in zip(months, values):
+                rows.append({
+                    "Month": month,
+                    "Company": key,
+                    "Search_Volume": value,
+                })
+
+    if not rows:
+        return pd.DataFrame(columns=["Month", "Company", "Search_Volume"])
+
+    return pd.DataFrame(rows)
 
 
 import streamlit as st
