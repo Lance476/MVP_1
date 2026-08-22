@@ -40,7 +40,7 @@ from views import (
 # USER AND SESSION IDS MET COOKIE
 # ============================================================================
 try:
-    controller = CookieManager()
+    controller = CookieController()
 except Exception:
     controller = None
 

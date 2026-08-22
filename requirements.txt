@@ -7,3 +7,4 @@ requests
 plotly
 streamlit-ga
 streamlit-cookies-manager
+
