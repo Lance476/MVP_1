@@ -868,7 +868,7 @@ def get_search_volume_data(companies=None):
 
 
 import streamlit as st
-from streamlit_gtag import st_gtag
+from streamlit_ga import st_ga
 
 GA4_ID = st.secrets.get("GA4_ID", "")
 
