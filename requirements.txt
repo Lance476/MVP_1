@@ -5,3 +5,5 @@ numpy
 altair
 requests
 plotly
+streamlit-gtag
+streamlit-cookies-controller
