@@ -17,7 +17,7 @@ import time
 import uuid
 
 import streamlit as st
-from streamlit_cookies_manager import CookieManager
+from streamlit_cookies_controller import CookieController
 
 from config import COMPANIES
 from data import track_page_loaded, track_company_selection, track_view_mode_change

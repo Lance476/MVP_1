@@ -340,11 +340,7 @@ def render_comparison_snapshot(companies):
         return
 
     # Latest year financials
-    try:
-        annual, stock = load_financial_data()
-    except Exception as e:
-        print(f"render_comparison_snapshot: could not load financial data: {e}")
-        annual, stock = None, None
+    annual, stock = load_financial_data()
 
     rows = []
     for company in companies:
