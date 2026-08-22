@@ -15,8 +15,3 @@ google-oauth-client.json
 client_secret_*.json
 feedback.csv
 *.log
-
-# Generated data snapshots
-century_lithium_sentiment.csv
-trends_snapshot.csv
-trends_snapshot_meta.json
