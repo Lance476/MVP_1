@@ -124,12 +124,7 @@ with st.container():
     "2. Improve Cash on Hand from Yearly to Quarterly. "
     "This makes it clear under what circumstances capital raises has been done. "
     "Also monitor current cash levels.\n"
-    "3. Integrating News Sources, LinkedIn, X, Company Press Releases, YT (Interview), etc.\n"
-    "4. In the Timeline, future milestones and expectations will be shown.\n\n"
-    "28-08-2026 Today i worked primarily on the performance of firms, clustered together, and how well Century Lithium is actually searched on Google. The first one, Lithium projects in Nevada haven't go with the traction of Lithium price, although, they still performed better than Canadian lithium juniors over the past year. The Google search Ad, combined with the views on YT video's for Century Lithium are actually a bit disappointing, and there is massive room for upside on YT Views.\n\n"
-    "PS: If you aspire entrepreneurship, a connection of mine pressed me 1.5 years ago when we saw each other at the toilets of a festival at night, who did start entrepreneurship, pressed on my to just start. So this is for you, i just spent a few weeks on Youtube whether a non-technical person can build cool stuff. A few weeks of doubt, and still. It's there. It's the best decision one can make to start anyway. So this is for you, just start, and you will figure it out along the way.\n\n"
-    "Each day at 00:00 European Time, I upload a new version and share the progress made through the existing link. I'm always open to hear your feedback and suggestions."
-)
+    "3. Integrating News Sources, LinkedIn, X, Company Press Releases, YT (Interview), etc.")
 
     if 'data_source' in st.session_state:
         st.caption(f"Data source: {st.session_state.data_source}")
