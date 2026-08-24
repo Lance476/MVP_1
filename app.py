@@ -26,13 +26,13 @@ from views import (
     render_comparison_snapshot,
     render_dashboard,
     render_feedback_section,
-    render_financial_section,
     render_qa_section,
     render_search_analysis,
     render_sentiment_analysis,
     render_sidebar,
     render_stock_chart,
     render_studies,
+    render_cash_overview,
     render_timeline,
 )
 
@@ -115,54 +115,65 @@ with st.container():
         st.title(selected_companies[0])
 
     st.caption(
-    "MVP/Demo — Data may be inaccurate. Not financial advice.\n\n"
-    "I hope to improve the comparability of Junior Lithium Mining firms. "
-    "To simplify this, I focused on advanced Lithium projects in Nevada.\n\n"
+    "MVP/Demo — Data may include errors. Not financial advice.\n\n"
+    "I hope to improve the comparability, Exposure & Ability to monitor Junior Mining Lithium firms.\n"
+    "To simplify this idea, I focus on advanced Lithium projects in Nevada.\n\n"
     "Upcoming upgrades:\n"
-    "1. Switch from Google Trends (0-100) to Advanced Search Volume. "
-    "For the firm, project, and relevant terms.\n"
-    "2. Improve Cash on Hand from Yearly to Quarterly. "
-    "This makes it clear under what circumstances capital raises has been done. "
-    "Also monitor current cash levels.\n"
-    "3. Integrating News Sources, LinkedIn, X, Company Press Releases, YT (Interview), etc.")
+    "Monitoring Future to measure Interest For the Firm, (Lithium) interest in Nevada, And in Lithium in General.\n\n"
+    "Integrating News Sources, i.e. LinkedIn, X, Company Press Releases, YT Interview.\n\n"
+    "📅 31-08-2026: Version 4 will be deployed (existing link)."
+)
 
     if 'data_source' in st.session_state:
         st.caption(f"Data source: {st.session_state.data_source}")
 
-    # Feedback form: visitors can leave a comment that is sent to the owner
-    render_feedback_section()
+    # --- SECTIONS ("newsroom" order: live -> search -> events -> reference) ---
+    # Returning visitors come for what CHANGED (price, catalysts), so the
+    # dynamic layers sit above the fold; the static reference library and the
+    # feedback ask sit at the bottom, after value has been delivered.
 
-    # --- SECTIONS (volgorde van de dashboard-pagina) ---------------------
-    if is_compare:
-        render_comparison_snapshot(selected_companies)
-        st.markdown("")
-
+    # 1. LIVE — price layer: the daily reason to come back
     render_dashboard(selected_companies)
-    st.markdown("")
-
-    render_studies(selected_companies)
-
-    render_timeline(selected_companies)
     st.markdown("")
 
     st.subheader("Stock Performance")
     render_stock_chart(selected_companies)
     st.markdown("")
 
-    st.subheader("Google Search Interest")
+    # 2. AT A GLANCE — cross-company summary (compare mode only)
+    if is_compare:
+        render_comparison_snapshot(selected_companies)
+        st.markdown("")
+
+    # 3. SEARCH — Google Trends teaser + Google Ads Search Volume,
+    #    directly after the price charts (attention layer first)
+    st.subheader("Google Trends")
     render_search_analysis(selected_companies)
+    st.markdown("")
+
+    # 4. EVENTS — upcoming catalysts/permits: the event-driven return trigger
+    render_timeline(selected_companies)
     st.markdown("")
 
     render_sentiment_analysis(selected_companies)
     st.markdown("")
 
-    st.subheader("Financial Health")
-    render_financial_section(selected_companies)
+    # 5. QUARTERLY — cash position & runway
+    render_cash_overview(selected_companies)
     st.markdown("")
 
+    # 6. REFERENCE — static study economics & value ratios
+    render_studies(selected_companies)
+    st.markdown("")
+
+    # 7. COMMUNITY — Q&A first, feedback ask last (post-value conversion)
     st.subheader("Management Due Diligence")
     st.markdown("")
 
     render_qa_section()
+    st.markdown("")
+
+    # Feedback form: visitors can leave a comment that is sent to the owner
+    render_feedback_section()
 
 # python -m streamlit run app.py

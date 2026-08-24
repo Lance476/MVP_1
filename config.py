@@ -55,7 +55,7 @@ COMPANIES = {
     },
     "Noram Lithium": {
         "gvkey": 187729,
-        "yf_ticker": "NRM",
+        "yf_ticker": "NRM.V",
         "search_terms": ['"Noram Lithium"', '"NRM stock"', 'Zeus'],
         "short_name": "Noram",
         "color": "#16A085",
@@ -75,7 +75,7 @@ DEFAULT_COMPANY = "Century Lithium"
 # STOCK PERFORMANCE CLUSTERS
 # ============================================================================
 # Grouped stock performance comparison so investors can compare Nevada
-# lithium juniors vs Canadian juniors vs Australian producers/ETF-benchmark.
+# lithium juniors vs Canadian juniors vs Australian producers.
 # Each entry maps a display label to its Yahoo Finance ticker.
 # ============================================================================
 STOCK_CLUSTERS = {
@@ -86,8 +86,8 @@ STOCK_CLUSTERS = {
             "American Battery Technology": "ABAT",
             "Ioneer": "IONR",
             "Century Lithium": "LCE.V",
-            "Surge Battery Metals": "NILI",
-            "Noram Lithium": "NRM",
+            "Surge Battery Metals": "NILIF",
+            "Noram Lithium": "NRM.V",
             "Nevada Lithium": "NVLHF",
         },
     },
@@ -95,20 +95,38 @@ STOCK_CLUSTERS = {
         "label": "Canadian Lithium Juniors",
         "members": {
             "E3 Lithium": "ETL.V",
-            "Patriot Battery Metals": "PMETF",
+            "Patriot Battery Metals": "PMET.TO",
             "Critical Elements Lithium": "CRE.V",
         },
     },
     "Australian Producers + Benchmark": {
-        "label": "Australian Producers + Sprott ETF",
+        "label": "Australian Producers",
         "members": {
             "Pilbara Minerals": "PLS.AX",
             "Mineral Resources": "MIN.AX",
             "Liontown Resources": "LTR.AX",
-            "Sprott Lithium Miners ETF": "LITP",
         },
     },
 }
+
+# ============================================================================
+# TIME PERIODS FOR STOCK CHART FILTERING
+# ============================================================================
+# Time period options shown as a filter above the stock performance charts.
+# Each entry maps a display label to the number of calendar days to look back
+# from the most recent trading day available in the cached 1-year data.
+# ============================================================================
+TIME_PERIODS = [
+    {"label": "1D",   "days": 1},
+    {"label": "7D",   "days": 7},
+    {"label": "30D",  "days": 30},
+    {"label": "90D",  "days": 90},
+    {"label": "1Y",   "days": 365},
+]
+
+# 1D by default: the stock chart opens on the live intraday view — the
+# window returning visitors check first.
+DEFAULT_TIME_PERIOD = "1D"
 
 # ============================================================================
 # GOOGLE ADS SEARCH VOLUME (per company, monthly)
@@ -418,6 +436,10 @@ MARKET_CAP_OVERRIDES = {
 
 # ============================================================================
 # PRESS RELEASE TIMELINE (per company)
+#
+# Optional key "Status": "Future" marks milestones that have NOT happened yet
+# (planned / ongoing). The timeline chart separates these from the historical
+# events with a dashed split line and distinct open-triangle markers.
 # ============================================================================
 
 TIMELINE_DATA = {
@@ -429,6 +451,10 @@ TIMELINE_DATA = {
         {"Study": "FS", "Commitment date": "28-01-2021", "Expected date": "31-03-2022", "Actual date": "29-04-2024", "Delay": "~2.1 years", "Commitment Evidence": "towards a feasibility study later this year. Cypress ... is fully financed to advance the Clayton Valley Lithium Project to a feasibility study.", "Expected Evidence": "—"},
         {"Study": "FS_U", "Commitment date": "24-02-2025", "Expected date": "—", "Actual date": "23-02-2026", "Delay": "—", "Commitment Evidence": "Century Lithium will initiate work on an Updated Feasibility Study for Angel Island", "Expected Evidence": "—"},
         {"Study": "PoO_Submitted", "Commitment date": "30-12-2020", "Expected date": "—", "Actual date": "05-05-2026", "Delay": "—", "Commitment Evidence": "The data will aid in the design of a feasibility-level plan-of-operations (POO) for the Project in coordination with the National Environmental Policy Act process…", "Expected Evidence": "—"},
+        {"Study": "BLM Comments on Draft PoO", "Commitment date": "—", "Expected date": "Within the next month (May 2026)", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Finalize Mine Plan of Operations", "Commitment date": "—", "Expected date": "2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Demonstration Plant Construction", "Commitment date": "—", "Expected date": "H2 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Strategic Partnering / Offtake", "Commitment date": "—", "Expected date": "Ongoing", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "Lithium Americas": [
         {"Study": "MRE_U", "Commitment date": "23-10-2017", "Expected date": "—", "Actual date": "05-04-2018", "Delay": "—", "Commitment Evidence": "Conducting an exploration program with the objective of expanding and upgrading the existing NI 43-101 compliant resource.", "Expected Evidence": "—"},
@@ -440,6 +466,9 @@ TIMELINE_DATA = {
         {"Study": "FS", "Commitment date": "12-11-2019", "Expected date": "30-06-2020", "Actual date": "31-01-2023", "Delay": "~2.6 years", "Commitment Evidence": "Lithium Americas expects to release an NI 43-101 compliant definitive feasibility study by mid-2020... — September 25, 2019.", "Expected Evidence": "—"},
         {"Study": "FID", "Commitment date": "16-10-2024", "Expected date": "—", "Actual date": "01-04-2025", "Delay": "—", "Commitment Evidence": "The Company and GM are targeting making the FID and issuing full notice to proceed for Thacker Pass by the end of the year...", "Expected Evidence": "—"},
         {"Study": "FS_U", "Commitment date": "14-03-2024", "Expected date": "—", "Actual date": "07-01-2025", "Delay": "—", "Commitment Evidence": "The 2023 drilling program at Thacker Pass to further define and expand the resource estimate concluded successfully in December 2023.", "Expected Evidence": "—"},
+        {"Study": "Definitive Capital Estimate", "Commitment date": "—", "Expected date": "Q3 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Mechanical Completion (Phase 1)", "Commitment date": "—", "Expected date": "Late 2027", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Commercial Production", "Commitment date": "—", "Expected date": "2028", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "American Battery Technology Co": [
         {"Study": "MRE", "Commitment date": "—", "Expected date": "—", "Actual date": "28-02-2023", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
@@ -450,6 +479,11 @@ TIMELINE_DATA = {
         {"Study": "FAST41_Covered", "Commitment date": "—", "Expected date": "—", "Actual date": "19-08-2025", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
         {"Study": "PFS", "Commitment date": "18-01-2024", "Expected date": "—", "Actual date": "16-10-2025", "Delay": "—", "Commitment Evidence": "Updated Initial Assessment provides necessary data and recommends next steps to further develop the resource, including the completion of a Pre-Feasibility Study", "Expected Evidence": "—"},
         {"Study": "NEPA_Start", "Commitment date": "03-10-2023", "Expected date": "—", "Actual date": "02-07-2026", "Delay": "—", "Commitment Evidence": "ABTC is advancing the Tonopah Flats Lithium Project through the federal permitting process, including the preparation of the required environmental baseline studies for the NEPA review.", "Expected Evidence": "—"},
+        {"Study": "Pilot Operations", "Commitment date": "—", "Expected date": "2026–2027", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Second Recycling Facility", "Commitment date": "—", "Expected date": "Shortly (June 2026)", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "DOE Grant Reinstatement", "Commitment date": "—", "Expected date": "June 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Definitive Feasibility Study", "Commitment date": "—", "Expected date": "2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Commercial Production (Phase 1)", "Commitment date": "—", "Expected date": "2028", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "Ioneer": [
         {"Study": "PFS", "Commitment date": "22-08-2017", "Expected date": "30-03-2018", "Actual date": "23-10-2018", "Delay": "~6 months", "Commitment Evidence": "Global Geoscience has made rapid progress towards developing the Rhyolite Ridge Lithium-Boron Project... and commenced a fully-funded Pre-Feasibility Study (PFS) to be completed by early 2018.", "Expected Evidence": "—"},
@@ -462,6 +496,9 @@ TIMELINE_DATA = {
         {"Study": "Record of Decision", "Commitment date": "30-03-2022", "Expected date": "30-03-2024", "Actual date": "24-10-2024", "Delay": "~6 months", "Commitment Evidence": "The Company's current best estimate is that a ROD would be received in 1Q 2024.", "Expected Evidence": "—"},
         {"Study": "FID", "Commitment date": "—", "Expected date": "—", "Actual date": "15-01-2025", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
         {"Study": "FS_U", "Commitment date": "31-01-2023", "Expected date": "—", "Actual date": "29-10-2025", "Delay": "—", "Commitment Evidence": "Based on these outcomes, an updated capital and operating cost estimate will be provided to stakeholders before making an FID.", "Expected Evidence": "—"},
+        {"Study": "Sign MOUs with KIND & Hyundai", "Commitment date": "—", "Expected date": "July 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Final Investment Decision", "Commitment date": "—", "Expected date": "H2 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "First Commercial Production", "Commitment date": "—", "Expected date": "2029", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "Surge Battery Metals": [
         {"Study": "PoO_Submitted", "Commitment date": "—", "Expected date": "—", "Actual date": "21-11-2023", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
@@ -471,6 +508,9 @@ TIMELINE_DATA = {
         {"Study": "NEPA_Start", "Commitment date": "—", "Expected date": "—", "Actual date": "20-12-2024", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
         {"Study": "Final_EA", "Commitment date": "—", "Expected date": "—", "Actual date": "05-03-2025", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
         {"Study": "PEA", "Commitment date": "22-02-2024", "Expected date": "31-12-2024", "Actual date": "09-06-2025", "Delay": "~5 months", "Commitment Evidence": "Surge expects to undertake a PEA study on the NNLP with an anticipated target reporting date in Q4 of 2024.", "Expected Evidence": "—"},
+        {"Study": "Scaled-up Leach & Separation Testing", "Commitment date": "—", "Expected date": "Q3 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "PFS", "Commitment date": "—", "Expected date": "Q4 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
+        {"Study": "Flowsheet Optimization", "Commitment date": "—", "Expected date": "Ongoing", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "Noram Lithium": [
         {"Study": "MRE", "Commitment date": "20-07-2016", "Expected date": "—", "Actual date": "24-07-2017", "Delay": "—", "Commitment Evidence": "Subsurface exploration in the form of shallow drilling core holes will be required to determine a preliminary resource estimate of the lithium and potassium contained within the near surface area central to the Zeus claims.", "Expected Evidence": "—"},
@@ -478,6 +518,7 @@ TIMELINE_DATA = {
         {"Study": "PEA", "Commitment date": "30-07-2020", "Expected date": "31-12-2020", "Actual date": "08-12-2021", "Delay": "~11 months", "Commitment Evidence": "planning engineering and economic studies toward a Preliminary Economic Assessment in 2020 (PEA).", "Expected Evidence": "—"},
         {"Study": "MRE_U", "Commitment date": "30-07-2022", "Expected date": "—", "Actual date": "30-01-2023", "Delay": "—", "Commitment Evidence": "Phase VI drilling in mid-2022", "Expected Evidence": "—"},
         {"Study": "MRE_U", "Commitment date": "07-11-2023", "Expected date": "—", "Actual date": "11-06-2024", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
+        {"Study": "PEA_U", "Commitment date": "—", "Expected date": "Late October 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "American Lithium Corp": [
         {"Study": "MRE", "Commitment date": "19-06-2019", "Expected date": "30-12-2019", "Actual date": "21-05-2020", "Delay": "~4 months", "Commitment Evidence": "With drilling ongoing, the company expects to deliver a maiden resource and early stage economic study in 2019.", "Expected Evidence": "—"},
@@ -487,6 +528,7 @@ TIMELINE_DATA = {
         {"Study": "MRE_U", "Commitment date": "—", "Expected date": "—", "Actual date": "01-12-2022", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
         {"Study": "PEA", "Commitment date": "05-10-2021", "Expected date": "31-03-2022", "Actual date": "01-02-2023", "Delay": "~10 months", "Commitment Evidence": "Optimization of process engineering and pre-concentration work being fast-tracked to enable completion of a Preliminary Economic Assessment ('PEA') during Q1 2022.", "Expected Evidence": "—"},
         {"Study": "MRE_U", "Commitment date": "08-12-2023", "Expected date": "—", "Actual date": "27-02-2025", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
+        {"Study": "Defense Supply Chain Integration", "Commitment date": "—", "Expected date": "Ongoing", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
 }
 
@@ -723,4 +765,120 @@ YOUTUBE_VIDEOS = {
             "url": "https://www.youtube.com/watch?v=9ze89z5hOfA"
         },
     ],
+}
+# ============================================================================
+# LITHIUM BEDRIJVEN - CASH OVERZICHT
+# Data: Kwartaalcijfers 2024-2026
+# Valuta: USD of CAD (per bedrijf aangegeven)
+# ============================================================================
+
+lithium_companies = {
+
+    # =========================================================
+    # 1. CENTURY LITHIUM (CYDVF) - VALUTA: CAD
+    # =========================================================
+    "Century Lithium": {
+        "currency": "CAD",
+        "data": [
+            {"quarter": "2024 Q1", "cash": 12.49, "change": -1.90, "burn": 1.90, "financing": 0, "underlying_burn": 1.90, "runway_2q": None, "runway_4q": None},
+            {"quarter": "2024 Q2", "cash": 10.30, "change": -2.19, "burn": 2.19, "financing": 0, "underlying_burn": 2.19, "runway_2q": 14.1, "runway_4q": None},
+            {"quarter": "2024 Q3", "cash": 7.85, "change": -2.45, "burn": 2.45, "financing": 0, "underlying_burn": 2.45, "runway_2q": 9.6, "runway_4q": None},
+            {"quarter": "2024 Q4", "cash": 5.99, "change": -1.86, "burn": 1.86, "financing": 0, "underlying_burn": 1.86, "runway_2q": 8.3, "runway_4q": 8.0},
+            {"quarter": "2025 Q1", "cash": 4.65, "change": -1.34, "burn": 1.34, "financing": 0, "underlying_burn": 1.34, "runway_2q": 8.7, "runway_4q": 6.6},
+            {"quarter": "2025 Q2", "cash": 3.98, "change": -0.67, "burn": 0.67, "financing": 0, "underlying_burn": 0.67, "runway_2q": 11.9, "runway_4q": 7.8},
+            # 2025 Q3: financing kwartaal - underlying burn GESCHAT (gemiddelde van 2025 Q4=1.47 en 2025 Q2=0.67)
+            {"quarter": "2025 Q3", "cash": 6.72, "change": +2.74, "burn": 0, "financing": 3.9, "underlying_burn": 1.07, "runway_2q": 15.7, "runway_4q": 13.1},
+            {"quarter": "2025 Q4", "cash": 5.25, "change": -1.47, "burn": 1.47, "financing": 0, "underlying_burn": 1.47, "runway_2q": 8.7, "runway_4q": 7.7},
+            # 2026 Q1: financing kwartaal - underlying burn GESCHAT (gewogen: 0.67×1 + 1.47×2)/3 = 1.20
+            {"quarter": "2026 Q1", "cash": 10.57, "change": +5.32, "burn": 0, "financing": 7.00, "underlying_burn": 1.20, "runway_2q": 21.1, "runway_4q": 18.6},
+        ]
+    },
+
+    # =========================================================
+    # 2. AMERICAN BATTERY (ABAT) - VALUTA: USD
+    # =========================================================
+    "American Battery": {
+        "currency": "USD",
+        "data": [
+            {"quarter": "2023 Q4", "cash": 7.73, "change": -10.18, "burn": 10.18, "financing": 0, "underlying_burn": 10.18, "runway_2q": None, "runway_4q": None},
+            {"quarter": "2024 Q1", "cash": 6.06, "change": -1.67, "burn": 1.67, "financing": 0, "underlying_burn": 1.67, "runway_2q": 9.7, "runway_4q": None},
+            # 2024 Q2: financing kwartaal - underlying burn GESCHAT (laatste schone = 1.67)
+            {"quarter": "2024 Q2", "cash": 7.00, "change": +0.94, "burn": 0, "financing": 0.94, "underlying_burn": 1.67, "runway_2q": 10.5, "runway_4q": None},
+            {"quarter": "2024 Q3", "cash": 5.77, "change": -1.23, "burn": 1.23, "financing": 0, "underlying_burn": 1.23, "runway_2q": 11.3, "runway_4q": 15.4},
+            # 2024 Q4: financing kwartaal - underlying burn GESCHAT (laatste schone = 1.23)
+            {"quarter": "2024 Q4", "cash": 20.62, "change": +14.85, "burn": 0, "financing": 14.85, "underlying_burn": 1.23, "runway_2q": 50.3, "runway_4q": 46.7},
+            {"quarter": "2025 Q1", "cash": 7.85, "change": -12.77, "burn": 12.77, "financing": 0, "underlying_burn": 12.77, "runway_2q": 1.5, "runway_4q": 2.2},
+            # 2025 Q2: financing kwartaal - underlying burn GESCHAT (laatste schone = 12.77)
+            {"quarter": "2025 Q2", "cash": 12.47, "change": +4.62, "burn": 0, "financing": 4.62, "underlying_burn": 12.77, "runway_2q": 2.9, "runway_4q": 3.0},
+            # 2025 Q3: financing kwartaal - underlying burn GESCHAT (laatste schone = 12.77)
+            {"quarter": "2025 Q3", "cash": 30.92, "change": +18.45, "burn": 0, "financing": 18.45, "underlying_burn": 12.77, "runway_2q": 7.3, "runway_4q": 4.9},
+            # 2025 Q4: financing kwartaal - underlying burn GESCHAT (laatste schone = 12.77)
+            {"quarter": "2025 Q4", "cash": 48.69, "change": +17.77, "burn": 0, "financing": 17.77, "underlying_burn": 12.77, "runway_2q": 11.4, "runway_4q": 6.1},
+            {"quarter": "2026 Q1", "cash": 38.49, "change": -10.20, "burn": 10.20, "financing": 0, "underlying_burn": 10.20, "runway_2q": 9.0, "runway_4q": 7.1},
+        ]
+    },
+    # =========================================================
+    # 3. SURGE BATTERY (NILIF) - VALUTA: CAD
+    # =========================================================
+    "Surge Battery": {
+        "currency": "CAD",
+        "data": [
+            {"quarter": "2024 Q1", "cash": 5.31, "change": -2.10, "burn": 2.10, "financing": 0, "underlying_burn": 2.10, "runway_2q": None, "runway_4q": None},
+            {"quarter": "2024 Q2", "cash": 4.80, "change": -0.51, "burn": 0.51, "financing": 0, "underlying_burn": 0.51, "runway_2q": 11.0, "runway_4q": None},
+            {"quarter": "2024 Q3", "cash": 3.06, "change": -1.74, "burn": 1.74, "financing": 0, "underlying_burn": 1.74, "runway_2q": 4.1, "runway_4q": None},
+            {"quarter": "2024 Q4", "cash": 0.91, "change": -2.15, "burn": 2.15, "financing": 0, "underlying_burn": 2.15, "runway_2q": 1.4, "runway_4q": 2.8},
+            {"quarter": "2025 Q1", "cash": 0.78, "change": -0.13, "burn": 0.13, "financing": 0, "underlying_burn": 0.13, "runway_2q": 7.6, "runway_4q": 5.8},
+            # 2025 Q2: financing kwartaal - underlying burn GESCHAT (laatste schone = 0.13)
+            {"quarter": "2025 Q2", "cash": 2.55, "change": +1.77, "burn": 0, "financing": 1.77, "underlying_burn": 0.13, "runway_2q": 58.8, "runway_4q": 43.9},
+            {"quarter": "2025 Q3", "cash": 1.21, "change": -1.34, "burn": 1.34, "financing": 0, "underlying_burn": 1.34, "runway_2q": 2.7, "runway_4q": 3.6},
+            # 2025 Q4: financing kwartaal - underlying burn GESCHAT (gewogen: 0.13×1 + 1.34×2)/3 = 0.94)
+            {"quarter": "2025 Q4", "cash": 2.69, "change": +1.48, "burn": 0, "financing": 1.48, "underlying_burn": 0.94, "runway_2q": 8.6, "runway_4q": 6.0},
+            # 2026 Q1: financing kwartaal - underlying burn GESCHAT (gewogen: 1.34×1 + 0.94×2)/3 = 1.07)
+            {"quarter": "2026 Q1", "cash": 30.01, "change": +27.32, "burn": 0, "financing": 27.32, "underlying_burn": 1.07, "runway_2q": 84.1, "runway_4q": 78.0},
+        ]
+    },
+
+    # =========================================================
+    # 4. LITHIUM AMERICAS (LAC) - VALUTA: USD
+    # =========================================================
+    "Lithium Americas": {
+        "currency": "USD",
+        "data": [
+            {"quarter": "2023 Q4", "cash": 195.52, "change": -12.90, "burn": 12.90, "financing": 0, "underlying_burn": 12.90, "runway_2q": None, "runway_4q": None},
+            {"quarter": "2024 Q1", "cash": 147.24, "change": -48.28, "burn": 48.28, "financing": 0, "underlying_burn": 48.28, "runway_2q": 7.3, "runway_4q": None},
+            # 2024 Q2: financing kwartaal - underlying burn GESCHAT (laatste schone = 48.28)
+            {"quarter": "2024 Q2", "cash": 375.83, "change": +228.59, "burn": 0, "financing": 228.59, "underlying_burn": 48.28, "runway_2q": 23.4, "runway_4q": None},
+            {"quarter": "2024 Q3", "cash": 341.16, "change": -34.67, "burn": 34.67, "financing": 0, "underlying_burn": 34.67, "runway_2q": 14.8, "runway_4q": 16.7},
+            # 2024 Q4: financing kwartaal - underlying burn GESCHAT (laatste schone = 34.67)
+            {"quarter": "2024 Q4", "cash": 593.89, "change": +252.73, "burn": 0, "financing": 252.73, "underlying_burn": 34.67, "runway_2q": 51.4, "runway_4q": 50.8},
+            {"quarter": "2025 Q1", "cash": 446.62, "change": -147.27, "burn": 147.27, "financing": 0, "underlying_burn": 147.27, "runway_2q": 4.9, "runway_4q": 7.0},
+            # 2025 Q2: financing kwartaal - underlying burn GESCHAT (gewogen: 34.67×1 + 147.27×2)/3 = 109.74)
+            {"quarter": "2025 Q2", "cash": 508.85, "change": +62.23, "burn": 0, "financing": 62.23, "underlying_burn": 109.74, "runway_2q": 13.9, "runway_4q": 9.3},
+            {"quarter": "2025 Q3", "cash": 385.31, "change": -123.54, "burn": 123.54, "financing": 0, "underlying_burn": 123.54, "runway_2q": 9.4, "runway_4q": 9.5},
+            # 2025 Q4: financing kwartaal - underlying burn GESCHAT (gewogen: 147.27×1 + 123.54×2)/3 = 131.45)
+            {"quarter": "2025 Q4", "cash": 568.23, "change": +182.92, "burn": 0, "financing": 182.92, "underlying_burn": 131.45, "runway_2q": 13.0, "runway_4q": 10.4},
+            # 2026 Q1: financing kwartaal - underlying burn GESCHAT (gewogen: 123.54×1 + 131.45×2)/3 = 128.81)
+            {"quarter": "2026 Q1", "cash": 758.51, "change": +190.28, "burn": 0, "financing": 190.28, "underlying_burn": 128.81, "runway_2q": 17.7, "runway_4q": 14.5},
+        ]
+    },
+
+    # =========================================================
+    # 5. AMERICAN LITHIUM (AMLIF) - VALUTA: CAD
+    # =========================================================
+    "American Lithium": {
+        "currency": "CAD",
+        "data": [
+            {"quarter": "2024 Q1", "cash": 11.89, "change": -7.01, "burn": 7.01, "financing": 0, "underlying_burn": 7.01, "runway_2q": None, "runway_4q": None},
+            {"quarter": "2024 Q2", "cash": 8.97, "change": -2.92, "burn": 2.92, "financing": 0, "underlying_burn": 2.92, "runway_2q": 5.4, "runway_4q": None},
+            {"quarter": "2024 Q3", "cash": 5.73, "change": -3.24, "burn": 3.24, "financing": 0, "underlying_burn": 3.24, "runway_2q": 2.8, "runway_4q": None},
+            {"quarter": "2024 Q4", "cash": 3.49, "change": -2.24, "burn": 2.24, "financing": 0, "underlying_burn": 2.24, "runway_2q": 3.8, "runway_4q": 4.4},
+            {"quarter": "2025 Q1", "cash": 1.11, "change": -2.38, "burn": 2.38, "financing": 0, "underlying_burn": 2.38, "runway_2q": 1.4, "runway_4q": 1.9},
+            {"quarter": "2025 Q2", "cash": 0.36, "change": -0.75, "burn": 0.75, "financing": 0, "underlying_burn": 0.75, "runway_2q": 1.2, "runway_4q": 1.5},
+            # 2025 Q3: financing kwartaal - underlying burn GESCHAT (laatste schone = 0.75)
+            {"quarter": "2025 Q3", "cash": 7.63, "change": +7.27, "burn": 0, "financing": 7.27, "underlying_burn": 0.75, "runway_2q": 30.5, "runway_4q": 27.7},
+            {"quarter": "2025 Q4", "cash": 4.34, "change": -3.29, "burn": 3.29, "financing": 0, "underlying_burn": 3.29, "runway_2q": 4.0, "runway_4q": 4.8},
+            # 2026 Q1: financing kwartaal - underlying burn GESCHAT (gewogen: 0.75×1 + 3.29×2)/3 = 2.44)
+            {"quarter": "2026 Q1", "cash": 7.57, "change": +3.23, "burn": 0, "financing": 3.23, "underlying_burn": 2.44, "runway_2q": 9.3, "runway_4q": 6.7},
+        ]
+    },
 }

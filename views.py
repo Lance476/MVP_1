@@ -10,29 +10,34 @@ import re
 import streamlit as st
 import yfinance as yf
 
-from config import COMPANIES, DEFAULT_COMPANY, LIT_LABEL, STAGE_ORDER, STAGE_SHORT_MAP, STOCK_CLUSTERS, TIMELINE_DATA, YOUTUBE_VIDEOS
+from config import COMPANIES, DEFAULT_COMPANY, LIT_LABEL, STAGE_ORDER, STAGE_SHORT_MAP, STOCK_CLUSTERS, TIMELINE_DATA, TIME_PERIODS, DEFAULT_TIME_PERIOD, YOUTUBE_VIDEOS, lithium_companies
 from data import (
     company_term_map,
     get_cluster_stock_data,
-    get_correlation_data,
+    STOCK_INTERVAL_CONFIG,
     get_dashboard_metrics,
+    get_monitor_returns,
     get_feedback_email,
     get_google_trends,
     get_market_cap_data,
     get_monthly_search_pattern,
     get_search_volume_data,
     get_stock_data,
-    get_trends_snapshot_info,
     build_company_financials,
     load_financial_data,
     load_study_data,
     send_feedback,
+    stock_cache_ttl_label,
     track_event,
     track_expander_open,
+    track_period_change,
     track_qa_like,
     track_qa_submit,
     track_tab_click,
 )
+
+# Denser intraday windows exceed Altair's default 5000-row cap.
+alt.data_transformers.disable_max_rows()
 
 
 def render_sidebar():
@@ -77,151 +82,100 @@ def render_sidebar():
 
 
 def render_dashboard(companies=None):
-    """Render the market-sentiment dashboard (single or comparison)."""
+    """Market Monitor — 5 squares side-by-side (one per entity)."""
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    is_compare = len(companies) > 1
-
-    if is_compare:
-        st.subheader("Market Sentiment — Side by Side")
-    else:
-        st.subheader("Market Sentiment")
-
-    metrics = get_dashboard_metrics(companies)
-
-    if not metrics:
-        st.warning("Could not load dashboard metrics")
+    st.subheader("Market Monitor")
+    board = get_monitor_returns(companies)
+    rows = board.get("rows", [])
+    if not rows:
+        st.warning("Could not load market monitor data")
         return
 
-    # Filter out the LIT benchmark key
-    company_metrics = {k: v for k, v in metrics.items() if not k.startswith('_')}
-    if not company_metrics:
-        st.warning("Could not load company metrics")
-        return
+    def _color(v):
+        return "#1a7f37" if v >= 0 else "#d1242f"
 
-    if is_compare:
-        # Side-by-side cards for each selected company
-        cols = st.columns(len(company_metrics))
-        for col, (company, m) in zip(cols, company_metrics.items()):
-            with col:
-                # Company name and ticker
-                st.markdown(f"""
-                <div style='
-                    font-weight: 500;
-                    font-size: 14px;
-                    color: #1a1a2e;
-                    margin-bottom: 2px;
-                '>{company}</div>
-                <div style='
-                    font-size: 11px;
-                    color: #999;
-                    margin-bottom: 8px;
-                '>{COMPANIES[company]['yf_ticker']}</div>
-                """, unsafe_allow_html=True)
+    def _pct(v):
+        if v is None:
+            return "n/a"
+        sign = "+" if v >= 0 else ""
+        return f"{sign}{v:.1f}%"
 
-                # Price, return and volume on one line - clean and compact
-                price_color = "#27AE60" if m['return_30d'] >= 0 else "#E74C3C"
-                vol_change = m.get('volume_change', 0)
-                vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
+    def _colored(v, size="13px"):
+        """% value in green/red — slightly larger, normal weight so the
+        digits stay crisp and readable at card size."""
+        if v is None:
+            return f"<span style='color:#9ca3af; font-size:{size};'>n/a</span>"
+        return (f"<span style='font-weight:400; font-size:{size}; "
+                f"color:{_color(v)};'>{_pct(v)}</span>")
 
-                st.markdown(f"""
-                <div style='
-                    display: flex;
-                    align-items: baseline;
-                    gap: 10px;
-                '>
-                    <span style='font-size: 22px; font-weight: 600; color: #1a1a2e;'>${m['current']:.2f}</span>
-                    <span style='font-size: 13px; color: {price_color}; font-weight: 500;'>{m['return_30d']:+.1f}%</span>
-                    <span style='font-size: 11px; color: #777;'>| Vol <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
-                    <span style='font-size: 10px; color: #bbb;'>30d</span>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        # Single company
-        company = list(company_metrics.keys())[0]
-        m = company_metrics[company]
+    def _plain(v, size="10px", color="#1f2937"):
+        """% value in a neutral dark color — used for the small
+        volume-change numbers so they don't compete with the red/green
+        return figures."""
+        if v is None:
+            return f"<span style='color:#9ca3af; font-size:{size};'>n/a</span>"
+        return (f"<span style='font-weight:400; font-size:{size}; "
+                f"color:{color};'>{_pct(v)}</span>")
 
-        # Two columns with tighter spacing
-        col1, col2 = st.columns([1, 1])
+    def _card(r):
+        name = r["name"]
+        ticker = r.get("ticker", "")
+        price = ""
+        if r.get("price") is not None:
+            price = f"<div style='font-size:12px; color:#6b7280;'>$ {r['price']:.2f}</div>"
+        else:
+            # Empty spacer line with the same height as the price row, so cards
+            # without a price (e.g. the cluster "avg of N members" cards) keep
+            # the same height as the ticker cards and all squares align.
+            price = "<div style='font-size:12px;'>&nbsp;</div>"
 
-        with col1:
-            # Company header - smaller and cleaner
-            st.markdown(f"""
-            <div style='
-                font-weight: 500;
-                font-size: 14px;
-                color: #1a1a2e;
-                margin-bottom: 2px;
-            '>{company}</div>
-            <div style='
-                font-size: 11px;
-                color: #999;
-                margin-bottom: 6px;
-            '>{COMPANIES[company]['yf_ticker']}</div>
-            """, unsafe_allow_html=True)
+        def _line(label, value_html):
+            return (
+                "<div style='display:flex; justify-content:space-between; "
+                "align-items:center; font-size:11px; padding:2px 0; "
+                "border-bottom:1px solid #f3f4f6;'>"
+                f"<span style='color:#9ca3af;'>{label}</span>"
+                f"<span>{value_html}</span>"
+                "</div>"
+            )
 
-            # Price, return and volume on one line - clean and compact
-            price_color = "#27AE60" if m['return_30d'] >= 0 else "#E74C3C"
-            vol_change = m.get('volume_change', 0)
-            vol_color = "#27AE60" if vol_change >= 0 else "#E74C3C"
+        def _pair(value1, value2):
+            # value1/value2 are already rendered <span>s from _colored();
+            # only wrap them in the small gray "vol" label here.
+            return (f"{value1} <span style='color:#8a9099; font-size:10px;'>"
+                    f"vol {value2}</span>")
 
-            st.markdown(f"""
-            <div style='
-                display: flex;
-                align-items: baseline;
-                gap: 10px;
-            '>
-                <span style='font-size: 22px; font-weight: 600; color: #1a1a2e;'>${m['current']:.2f}</span>
-                <span style='font-size: 13px; color: {price_color}; font-weight: 500;'>{m['return_30d']:+.1f}%</span>
-                <span style='font-size: 11px; color: #777;'>| Vol <span style='font-weight: 500; color: {vol_color};'>{vol_change:+.1f}%</span></span>
-                <span style='font-size: 10px; color: #bbb;'>30d</span>
-            </div>
-            """, unsafe_allow_html=True)
+        row = (
+            _line("1D", _pair(_colored(r["returns"].get("1d")),
+                              _plain(r.get("volume_changes", {}).get("1d"))))
+            + _line("7D", _pair(_colored(r["returns"].get("7d")),
+                                _plain(r.get("volume_changes", {}).get("7d"))))
+            + _line("30D", _pair(_colored(r["returns"].get("30d")),
+                                 _plain(r.get("volume_changes", {}).get("30d"))))
+        )
+        return f"""
+        <div style='border:1px solid #e5e7eb; border-radius:10px; padding:12px;
+                    background:#ffffff; box-shadow:0 1px 2px rgba(0,0,0,0.05);
+                    height:100%;'>
+          <div style='font-weight:600; font-size:13px; color:#1f2937;'>{name}</div>
+          <div style='font-size:11px; color:#9ca3af;'>{ticker}</div>
+          {price}
+          <div style='margin-top:8px;'>{row}</div>
+        </div>
+        """
 
-        with col2:
-            if '_lit_benchmark' in metrics:
-                lit = metrics['_lit_benchmark']
-                lit_return_color = "#27AE60" if lit['return_30d'] >= 0 else "#E74C3C"
+    cols = st.columns(len(rows))
+    for col, r in zip(cols, rows):
+        with col:
+            st.markdown(_card(r), unsafe_allow_html=True)
 
-                st.markdown(f"""
-                <div style='
-                    font-weight: 500;
-                    font-size: 14px;
-                    color: #1a1a2e;
-                    margin-bottom: 2px;
-                '>Sprott Lithium Miners ETF</div>
-                <div style='
-                    font-size: 11px;
-                    color: #999;
-                    margin-bottom: 6px;
-                '>LITP</div>
-                <div style='
-                    display: flex;
-                    align-items: baseline;
-                    gap: 10px;
-                    margin-bottom: 6px;
-                '>
-                    <span style='
-                        font-size: 24px;
-                        font-weight: 600;
-                        color: #1a1a2e;
-                        letter-spacing: -0.5px;
-                    '>${lit['current']:.2f}</span>
-                    <span style='
-                        font-size: 14px;
-                        color: {lit_return_color};
-                        font-weight: 500;
-                    '>{lit['return_30d']:+.1f}%</span>
-                    <span style='
-                        font-size: 10px;
-                        color: #bbb;
-                        font-weight: 400;
-                    '>30d</span>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.caption("No LIT benchmark data available")
+    st.markdown("")
+    st.markdown("")
+    st.markdown("")
+    st.caption("Data from Yahoo Finance — Updates Daily")
+    st.caption("Volume: 1D vs previous trading day; 7D/30D vs typical (median) daily volume over the same window")
 
 
 def render_stock_chart(companies=None):
@@ -229,13 +183,60 @@ def render_stock_chart(companies=None):
 
     Cluster 1: Nevada Lithium Juniors
     Cluster 2: Canadian Lithium Juniors
-    Cluster 3: Australian Producers + Sprott ETF benchmark
+    Cluster 3: Australian Producers
+
+    A horizontal time-period selector (1D, 7D, 30D, 90D, 1Y) lets users
+    zoom in on recent price action — encouraging repeat visits to monitor
+    short-term movements.  Each cluster is rendered inside a collapsible
+    ``st.expander`` so users can focus on the groups they care about.
     """
     import altair as alt
+
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    cluster_data = get_cluster_stock_data()
+    # ------------------------------------------------------------------
+    # Time-period selector
+    # ------------------------------------------------------------------
+    period_labels = [p["label"] for p in TIME_PERIODS]
+    default_idx = (
+        period_labels.index(DEFAULT_TIME_PERIOD)
+        if DEFAULT_TIME_PERIOD in period_labels
+        else len(period_labels) - 1
+    )
+    selected_period = st.radio(
+        "Time period",
+        options=period_labels,
+        index=default_idx,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="stock_period_radio",
+    )
+
+    period_days = next(
+        (p["days"] for p in TIME_PERIODS if p["label"] == selected_period), 365
+    )
+    track_period_change(selected_period)
+
+    cluster_data = get_cluster_stock_data(period_days=period_days)
+
+    # x-axis format / tick density depends on the selected period
+    axis_cfg = {
+        1:   {"format": "%H:%M",   "tick_count": "hour",  "title": "Time (UTC)"},
+        7:   {"format": "%m/%d %H:%M", "tick_count": "day", "title": "Date"},
+        30:  {"format": "%m/%d",   "tick_count": "week",  "title": "Date"},
+        90:  {"format": "%m/%d",   "tick_count": "month", "title": "Month"},
+        365: {"format": "%Y-%m",   "tick_count": "month", "title": "Date"},
+    }
+    ax = axis_cfg.get(period_days, axis_cfg[365])
+
+    # Bar density per window — straight from STOCK_INTERVAL_CONFIG (data.py)
+    bar_interval = STOCK_INTERVAL_CONFIG.get(period_days, {}).get("interval", "daily")
+    st.caption(
+        f"Data: {selected_period} view using {bar_interval} bars (Yahoo Finance); "
+        f"refreshed every {stock_cache_ttl_label(period_days)}. "
+        f"Illiquid stocks may show fewer bars."
+    )
 
     # Predefined colors per cluster for consistency
     cluster_colors = {
@@ -247,50 +248,94 @@ def render_stock_chart(companies=None):
             "#1A5276", "#148F77", "#B03A2E",
         ],
         "Australian Producers + Benchmark": [
-            "#D35400", "#7D3C98", "#1B4F72", "#F1C40F",
+            "#D35400", "#7D3C98", "#1B4F72",
         ],
     }
 
+    # ------------------------------------------------------------------
+    # Cluster charts — each inside a collapsible expander
+    # ------------------------------------------------------------------
     for cluster_key, cluster_info in STOCK_CLUSTERS.items():
         data = cluster_data.get(cluster_key)
-        if data is None or data.empty:
-            st.markdown(f"**{cluster_info['label']}**")
-            st.info("No stock data available for this cluster.")
-            continue
+        label = cluster_info["label"]
 
-        color_scale = alt.Scale(
-            domain=list(cluster_info["members"].keys()),
-            range=cluster_colors.get(cluster_key, ["#95A5A6"] * len(cluster_info["members"]))
-        )
+        with st.expander(f"**{label}**", expanded=True):
+            track_expander_open(label)
 
-        chart = alt.Chart(data).mark_line(strokeWidth=2, point=False).encode(
-            x=alt.X("Date:T", axis=alt.Axis(format="%Y", tickCount="year", title="Year")),
-            y=alt.Y("Normalized:Q", title="Indexed (start = 100)", scale=alt.Scale(zero=False)),
-            color=alt.Color(
-                "Ticker:N",
-                title=None,
-                scale=color_scale,
-                legend=alt.Legend(
-                    orient="right",
+            if data is None or data.empty:
+                st.info("No stock data available for this cluster.")
+                continue
+
+            color_scale = alt.Scale(
+                domain=list(cluster_info["members"].keys()),
+                range=cluster_colors.get(
+                    cluster_key, ["#95A5A6"] * len(cluster_info["members"])
+                ),
+            )
+
+            chart = alt.Chart(data).mark_line(
+                # Clean, continuous line per ticker (Yahoo Finance style).
+                # Point markers are only added when a cluster is nearly
+                # empty (a handful of bars), where a bare line would be
+                # hard to see.
+                strokeWidth=2,
+                point=(
+                    alt.OverlayMarkDef(
+                        size=32, filled=True, stroke="white", strokeWidth=0.5
+                    )
+                    if len(data) < 50
+                    else False
+                ),
+            ).encode(
+                x=alt.X(
+                    "Date:T",
+                    axis=alt.Axis(
+                        format=ax["format"],
+                        tickCount=ax["tick_count"],
+                        title=ax["title"],
+                    ),
+                ),
+                y=alt.Y(
+                    "Normalized:Q",
+                    title="Indexed (start = 100)",
+                    scale=alt.Scale(zero=False),
+                ),
+                color=alt.Color(
+                    "Ticker:N",
                     title=None,
-                    labelFontSize=11,
-                    columns=1
-                )
-            ),
-            tooltip=[
-                alt.Tooltip("Ticker:N"),
-                alt.Tooltip("Date:T", title="Date", format="%Y-%m-%d"),
-                alt.Tooltip("Normalized:Q", title="Indexed", format=".1f"),
-            ]
-        ).properties(height=280)
+                    scale=color_scale,
+                    legend=alt.Legend(
+                        orient="right",
+                        title=None,
+                        labelFontSize=11,
+                        columns=1,
+                    ),
+                ),
+                # One continuous line per ticker (Yahoo Finance style):
+                # bars connect straight across nightly/weekend gaps instead
+                # of being split into separate per-session segments.
+                detail=[alt.Detail("Ticker:N")],
+                tooltip=[
+                    alt.Tooltip("Ticker:N"),
+                    alt.Tooltip(
+                        "Date:T",
+                        title="Date",
+                        format=(
+                            "%Y-%m-%d %H:%M"
+                            if period_days <= 90
+                            else "%Y-%m-%d"
+                        ),
+                    ),
+                    alt.Tooltip("Normalized:Q", title="Indexed", format=".1f"),
+                ],
+            ).properties(height=280)
 
-        st.markdown(f"**{cluster_info['label']}**")
-        st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, use_container_width=True)
 
     # ------------------------------------------------------------------
-    # Simple cluster comparison: 12-month performance per cluster
+    # Simple cluster comparison: performance per cluster for the period
     # ------------------------------------------------------------------
-    st.markdown("**12-Month Performance — Cluster Comparison**")
+    st.markdown(f"**{selected_period} Performance — Cluster Comparison**")
 
     summary_rows = []
     for cluster_key, cluster_info in STOCK_CLUSTERS.items():
@@ -298,7 +343,6 @@ def render_stock_chart(companies=None):
         if data is None or data.empty:
             continue
 
-        # Latest normalized value per member (indexed to 100 at start)
         latest_perf = (
             data.sort_values("Date")
             .groupby("Ticker")["Normalized"]
@@ -322,7 +366,9 @@ def render_stock_chart(companies=None):
     if summary_rows:
         summary_df = pd.DataFrame(summary_rows)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
-        
+
+    st.markdown("")
+
 
 def render_comparison_snapshot(companies):
     """A compact 'at-a-glance' summary of the selected companies.
@@ -458,9 +504,15 @@ def render_project_studies(companies=None):
                     stage_order = merged['Stage_Display'].map(STAGE_SHORT_MAP).tolist()
 
                     # Compact faceted chart — each ratio has its own scale
+                    # Note: `point` overlay is required so companies with only ONE
+                    # study stage (e.g. Surge: only PEA) still show a visible marker
+                    # (a bare line mark with a single point is invisible in Vega-Lite).
                     chart = alt.Chart(ratio_melted).mark_line(
                         strokeWidth=2,
-                        color=COMPANIES[company]['color']
+                        color=COMPANIES[company]['color'],
+                        point=alt.OverlayMarkDef(
+                            size=42, filled=True, stroke='white', strokeWidth=1
+                        )
                     ).encode(
                         x=alt.X('Stage_Short:N',
                                title=None,
@@ -538,7 +590,10 @@ def render_project_studies(companies=None):
                 )
 
                 production_line = base_ops.transform_filter(alt.datum.Metric == 'Production (tpa)').mark_line(
-                    strokeWidth=2
+                    strokeWidth=2,
+                    point=alt.OverlayMarkDef(
+                        size=36, filled=True, stroke='white', strokeWidth=1
+                    )
                 ).encode(
                     y=alt.Y('Value:Q', title='Production (tpa)', scale=alt.Scale(zero=False),
                             axis=alt.Axis(labelFontSize=9)),
@@ -554,7 +609,10 @@ def render_project_studies(companies=None):
                 )
 
                 mine_life_line = base_ops.transform_filter(alt.datum.Metric == 'Mine Life (years)').mark_line(
-                    strokeWidth=2
+                    strokeWidth=2,
+                    point=alt.OverlayMarkDef(
+                        size=36, filled=True, stroke='white', strokeWidth=1
+                    )
                 ).encode(
                     y=alt.Y('Value:Q', title='Mine Life (years)', scale=alt.Scale(zero=False),
                             axis=alt.Axis(labelFontSize=9)),
@@ -606,7 +664,10 @@ def render_project_studies(companies=None):
                 )
 
                 grade_line = base_gr.transform_filter(alt.datum.Metric == 'Grade (ppm)').mark_line(
-                    strokeWidth=2
+                    strokeWidth=2,
+                    point=alt.OverlayMarkDef(
+                        size=36, filled=True, stroke='white', strokeWidth=1
+                    )
                 ).encode(
                     y=alt.Y('Value:Q', title='Grade (ppm)', scale=alt.Scale(zero=False),
                             axis=alt.Axis(labelFontSize=9)),
@@ -622,7 +683,10 @@ def render_project_studies(companies=None):
                 )
 
                 recovery_line = base_gr.transform_filter(alt.datum.Metric == 'Recovery (%)').mark_line(
-                    strokeWidth=2
+                    strokeWidth=2,
+                    point=alt.OverlayMarkDef(
+                        size=36, filled=True, stroke='white', strokeWidth=1
+                    )
                 ).encode(
                     y=alt.Y('Value:Q', title='Recovery (%)', scale=alt.Scale(zero=False),
                             axis=alt.Axis(labelFontSize=9)),
@@ -672,7 +736,10 @@ def render_project_studies(companies=None):
                 res_melted['Stage_Short'] = res_melted['Stage_Display'].map(STAGE_SHORT_MAP)
 
                 res_chart = alt.Chart(res_melted).mark_line(
-                    strokeWidth=2
+                    strokeWidth=2,
+                    point=alt.OverlayMarkDef(
+                        size=36, filled=True, stroke='white', strokeWidth=1
+                    )
                 ).encode(
                     x=alt.X('Stage_Short:N',
                             title=None,
@@ -1040,113 +1107,87 @@ def render_monthly_pattern(companies=None):
     st.altair_chart(chart, use_container_width=True)
 
 
+def _render_coming_soon_tiles(label):
+    """Row of three green 'coming soon' teaser tiles (1D / 7D / 30D).
+
+    Shared by every section that wants to announce upcoming graphs —
+    keeps the tiles pixel-identical everywhere.
+    """
+    for col, window in zip(st.columns(3), ["1D", "7D", "30D"]):
+        with col:
+            st.markdown(
+                f"""
+                <div class="coming-soon-box">
+                    <div class="coming-soon-window">{window}</div>
+                    <div class="coming-soon-label">{label}</div>
+                    <div class="coming-soon-badge">🚧 Coming soon</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
 def render_search_analysis(companies=None):
-    """Clean search section with comparison support."""
+    """Search section: coming-soon windows + Google Ads search volume."""
     if companies is None:
         companies = list(COMPANIES.keys())
 
     # ------------------------------------------------------------------
-    # Two charts side by side:
-    #   Left:  Interest vs Market Performance (per company)
-    #   Right: Google Ads Search Volume (company + Nevada Lithium + lithium stocks)
+    # Coming-soon placeholders: 1D / 7D / 30D search-interest graphs are
+    # on the roadmap.  Tease them now so viewers know what to expect and
+    # have a reason to come back.
     # ------------------------------------------------------------------
-    col1, col2 = st.columns(2)
+    _render_coming_soon_tiles("Search Interest graph")
 
-    with col1:
-        st.markdown("**Google Trends**")
-        corr_data, _ = get_correlation_data(companies)
+    # ------------------------------------------------------------------
+    # Google Ads Search Volume (company + Nevada Lithium + lithium stocks)
+    # Three blank lines: breathing room below the coming-soon tiles so the
+    # title does not visually crowd them.
+    # ------------------------------------------------------------------
+    st.markdown("")
+    st.markdown("")
+    st.markdown("")
+    st.markdown("**Google Ads Search Volume**")
+    sv_data = get_search_volume_data(companies)
 
-        # Show when the pinned trends snapshot was taken and when it refreshes.
-        # The Google Trends graph (SerpApi) is intentionally frozen for ~30 days
-        # so it does not change on every code patch/deploy.
-        snapshot_date, expires_date = get_trends_snapshot_info()
-        if snapshot_date is not None and expires_date is not None:
-            st.caption(
-                f"🔒 Graph fixed since {snapshot_date.strftime('%d %b %Y')} — "
-                f"refreshes on {expires_date.strftime('%d %b %Y')}"
-            )
+    if sv_data is not None and not sv_data.empty:
+        # Color scale: company color for the firm's own line, fixed colors
+        # for the two benchmarks.
+        color_scale = {c: COMPANIES[c]['color'] for c in companies}
+        color_scale["lithium stocks"] = "#95A5A6"
+        color_scale["Nevada Lithium"] = "#E74C3C"
 
-        if corr_data is not None and not corr_data.empty:
-            color_scale = {c: COMPANIES[c]['color'] for c in companies}
+        # Chronological month order (the labels are strings like "8/2025",
+        # which would otherwise sort alphabetically).
+        month_order = [
+            "8/2025", "9/2025", "10/2025", "11/2025", "12/2025",
+            "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026",
+        ]
 
-            # Melt for proper legend (corr_data already carries Company)
-            df_melted = corr_data.melt(
-                id_vars=['Date', 'Company'],
-                value_vars=['Search_Indexed'],
-                var_name='Series',
-                value_name='Value'
-            )
-
-            # Clean labels
-            df_melted['Series'] = df_melted['Series'].map({
-                'Search_Indexed': 'Search'
-            })
-
-            chart = alt.Chart(df_melted).mark_line(
-                strokeWidth=2
-            ).encode(
-                x=alt.X('Date:T', axis=alt.Axis(format="%Y", tickCount="year", title="Year")),
-                y=alt.Y('Value:Q', title='', scale=alt.Scale(zero=False)),
-                color=alt.Color(
-                    'Company:N',
-                    scale=alt.Scale(domain=list(color_scale.keys()),
-                                    range=list(color_scale.values())),
-                    title=None,
-                    legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
-                ),
-                tooltip=[
-                    alt.Tooltip('Company:N', title='Company'),
-                    alt.Tooltip('Date:T', title='Date', format='%Y-%m-%d'),
-                    alt.Tooltip('Value:Q', title='Search Interest', format='.1f')
-                ]
-            ).properties(height=250)
-
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("No correlation data available")
-
-    with col2:
-        st.markdown("**Google Ads Search Volume**")
-        sv_data = get_search_volume_data(companies)
-
-        if sv_data is not None and not sv_data.empty:
-            # Color scale: company color for the firm's own line, fixed colors
-            # for the two benchmarks.
-            color_scale = {c: COMPANIES[c]['color'] for c in companies}
-            color_scale["lithium stocks"] = "#95A5A6"
-            color_scale["Nevada Lithium"] = "#E74C3C"
-
-            # Chronological month order (the labels are strings like "8/2025",
-            # which would otherwise sort alphabetically).
-            month_order = [
-                "8/2025", "9/2025", "10/2025", "11/2025", "12/2025",
-                "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026",
+        sv_chart = alt.Chart(sv_data).mark_line(
+            strokeWidth=2
+        ).encode(
+            x=alt.X('Month:N', title=None, sort=month_order,
+                    axis=alt.Axis(labelAngle=-45, labelFontSize=9)),
+            y=alt.Y('Search_Volume:Q', title='Search Volume',
+                    scale=alt.Scale(zero=False)),
+            color=alt.Color(
+                'Company:N',
+                scale=alt.Scale(domain=list(color_scale.keys()),
+                                range=list(color_scale.values())),
+                title=None,
+                legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
+            ),
+            tooltip=[
+                alt.Tooltip('Company:N', title='Series'),
+                alt.Tooltip('Month:N', title='Month'),
+                alt.Tooltip('Search_Volume:Q', title='Search Volume', format=',.0f')
             ]
+        ).properties(height=250)
 
-            sv_chart = alt.Chart(sv_data).mark_line(
-                strokeWidth=2
-            ).encode(
-                x=alt.X('Month:N', title=None, sort=month_order,
-                        axis=alt.Axis(labelAngle=-45, labelFontSize=9)),
-                y=alt.Y('Search_Volume:Q', title='Search Volume',
-                        scale=alt.Scale(zero=False)),
-                color=alt.Color(
-                    'Company:N',
-                    scale=alt.Scale(domain=list(color_scale.keys()),
-                                    range=list(color_scale.values())),
-                    title=None,
-                    legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
-                ),
-                tooltip=[
-                    alt.Tooltip('Company:N', title='Series'),
-                    alt.Tooltip('Month:N', title='Month'),
-                    alt.Tooltip('Search_Volume:Q', title='Search Volume', format=',.0f')
-                ]
-            ).properties(height=250)
-
-            st.altair_chart(sv_chart, use_container_width=True)
-        else:
-            st.info("No search volume data available")
+        st.altair_chart(sv_chart, use_container_width=True)
+    else:
+        st.info("No search volume data available")
 
 
 def render_qa_section():
@@ -1214,438 +1255,275 @@ def render_qa_section():
         st.markdown("")
 
 
+_LITHIUM_KEY = {
+    # sidebar name in COMPANIES  ->  key in lithium_companies
+    "American Battery Technology Co": "American Battery",
+    "Surge Battery Metals": "Surge Battery",
+    "American Lithium Corp": "American Lithium",
+}
 
 
-
-def render_cash_flow_waterfall(cf, company):
-    """Render the Plotly waterfall chart for a single company's cash story."""
-    cf = cf.sort_values('fyear').reset_index(drop=True)
-
-    if cf.empty:
-        st.warning("Insufficient data available")
-        return
-
-    wf_x, wf_y, wf_base, wf_color, wf_text, wf_hover = [], [], [], [], [], []
-    wf_tickvals, wf_ticktext = [], []
-
-    pos = 0
-    first = cf.iloc[0]
-    open_cash = float(first['Beginning Cash'])
-    wf_x.append(pos); pos += 1
-    wf_y.append(open_cash); wf_base.append(0)
-    wf_color.append('#85C1E9')
-    wf_text.append('')
-    wf_hover.append(f"Opening cash (start {int(first['fyear'])}): C${open_cash:,.2f}M")
-    wf_tickvals.append(0); wf_ticktext.append('start')
-    cum = open_cash
-
-    for _, r in cf.iterrows():
-        yr = int(r['fyear'])
-        # Flows DURING this year (before the year-end bar)
-        for delta, color, lbl in [
-            (float(r['Financing Cash Flow']), '#2ECC71', 'Funding raised'),
-            (float(r['Operating Cash Flow']), '#E74C3C', 'G&A / overhead'),
-            (float(r['Investing Cash Flow']), '#8E44AD', 'CAPEX / project'),
-        ]:
-            wf_x.append(pos); pos += 1
-            if delta >= 0:
-                wf_base.append(cum); wf_y.append(delta)
-                wf_text.append(f"+C${delta:,.1f}M")
-                wf_hover.append(f"{yr} · {lbl}: +C${delta:,.2f}M")
-            else:
-                wf_base.append(cum + delta); wf_y.append(-delta)
-                wf_text.append(f"−C${abs(delta):,.1f}M")
-                wf_hover.append(f"{yr} · {lbl}: −C${abs(delta):,.2f}M")
-            wf_color.append(color)
-            cum += delta
-        # Year-end cash (blue bar, no numbers above it)
-        wf_x.append(pos); pos += 1
-        wf_y.append(r['Cash Position']); wf_base.append(0)
-        wf_color.append('#2E86C1')
-        wf_text.append('')
-        wf_hover.append(f"End of {yr}: C${r['Cash Position']:,.2f}M")
-        wf_tickvals.append(pos - 1); wf_ticktext.append(f"{yr}")
-        cum = r['Cash Position']
-
-    fig = go.Figure(go.Bar(
-        x=wf_x,
-        y=wf_y,
-        base=wf_base,
-        marker_color=wf_color,
-        text=wf_text,
-        textposition='outside',
-        textfont=dict(size=9, color='#333333'),
-        customdata=wf_hover,
-        hovertemplate='%{customdata}<extra></extra>',
-        showlegend=False,
-    ))
-
-    # Legend (invisible color swatches so the chart explains itself)
-    for color, name in [
-        ('#2E86C1', 'Cash (year-end)'),
-        ('#2ECC71', 'Funding raised'),
-        ('#E74C3C', 'G&A / overhead'),
-        ('#8E44AD', 'CAPEX / project'),
-    ]:
-        fig.add_trace(go.Scatter(
-            x=[None], y=[None], mode='markers',
-            marker=dict(color=color, size=10),
-            name=name, showlegend=True,
-        ))
-
-    fig.update_layout(
-        title=f"How Cash Flows Each Year — {company} (C$M)",
-        height=520,
-        template='plotly_white',
-        barmode='overlay',
-        showlegend=True,
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0,
-                    font=dict(size=11)),
-        margin=dict(t=80, b=10, l=60, r=40),
-    )
-    # Only 11 labels: "start" + one year per blue bar (no clutter below the axis)
-    fig.update_xaxes(tickvals=wf_tickvals, ticktext=wf_ticktext,
-                     tickangle=0, tickfont=dict(size=10))
-
-    st.plotly_chart(fig, width='stretch')
-
-
-def render_financial_section(companies=None):
-    """Render company financial data section (single or comparison)."""
+def render_cash_overview(companies=None):
+    """Render the quarterly cash overview: a cash chart plus a compact
+    table (Quarter, Cash) for every selected company."""
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    is_compare = len(companies) > 1
+    # Map selected companies to their lithium_companies entry (skip if absent)
+    available = []
+    for c in companies:
+        key = _LITHIUM_KEY.get(c, c)
+        entry = lithium_companies.get(key)
+        if entry and entry.get("data"):
+            available.append({"company": c, "key": key, "entry": entry})
 
-    try:
-        annual, stock = load_financial_data()
-    except Exception as e:
-        st.error(f"Could not load financial data: {e}")
+    if not available:
+        st.warning("No quarterly cash data available for the selected companies.")
         return
 
-    if is_compare:
-        render_financial_comparison(companies, annual, stock)
-        return
+    is_compare = len(available) > 1
 
-    # ------------------------------------------------------------------
-    # SINGLE COMPANY DEEP-DIVE
-    # ------------------------------------------------------------------
-    company = companies[0]
-    st.subheader(f"Financial Analysis — {company}")
-
-    cash_flow_df, market_cap_df, financial_df = build_company_financials(company, annual, stock)
-
-    if cash_flow_df is None:
-        st.error("No financial data found for this company")
-        return
-
-    # ---- CASH FLOW WATERFALL ----
-    render_cash_flow_waterfall(cash_flow_df, company)
-
-    # ---- MARKET CAP vs ASSETS ----
-    st.markdown("**Market Cap vs Total Assets**")
-
-    if not market_cap_df.empty and not financial_df.empty:
-        value_df = pd.merge(market_cap_df, financial_df[['fyear', 'Total Assets', 'Total Equity']], on='fyear', how='inner')
-
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=value_df['fyear'],
-            y=value_df['Total Assets'],
-            name='Total Assets',
-            marker_color='#2ECC71',
-            opacity=0.6,
-            hovertemplate='<b>Year %{x}</b><br>Total Assets: C$%{y:.2f}M<extra></extra>'
-        ))
-        fig.add_trace(go.Scatter(
-            x=value_df['fyear'],
-            y=value_df['market_cap'],
-            mode='lines+markers',
-            name='Market Cap',
-            line=dict(color='#2E86C1', width=3),
-            marker=dict(size=10),
-            hovertemplate='<b>Year %{x}</b><br>Market Cap: C$%{y:.2f}M<extra></extra>'
-        ))
-        fig.add_trace(go.Scatter(
-            x=value_df['fyear'],
-            y=value_df['Total Equity'],
-            mode='lines+markers',
-            name='Total Equity',
-            line=dict(color='#F39C12', width=2, dash='dash'),
-            marker=dict(size=8),
-            hovertemplate='<b>Year %{x}</b><br>Total Equity: C$%{y:.2f}M<extra></extra>'
-        ))
-        fig.update_layout(
-            title='Market Cap vs Assets vs Equity (C$M)',
-            xaxis_title='Year',
-            yaxis_title='C$ (M)',
-            template='plotly_white',
-            height=400,
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0, itemclick=False, itemdoubleclick=False)
+    # Header row: title left, "notify me" call-to-action far right.  Clicks
+    # are tracked in GA4 (notify_q2_cash_click) to measure demand for the
+    # upcoming Q2 cash figures.
+    header_cols = st.columns([0.72, 0.28], vertical_alignment="center")
+    with header_cols[0]:
+        st.subheader(
+            "Quarterly Cash Overview"
+            + (" — Side by Side" if is_compare else "")
         )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No market cap or financial data available")
-
-    st.markdown("---")
-
-    # ---- CASH FLOW OVERVIEW TABLE ----
-    st.markdown("**Cash Flow Overview**")
-
-    if not cash_flow_df.empty:
-        display_cash = cash_flow_df[
-            ['fyear', 'Beginning Cash', 'Operating Cash Flow', 'Investing Cash Flow',
-             'Financing Cash Flow', 'Net Change in Cash', 'Cash Position']
-        ].copy()
-        display_cash.columns = ['Year', 'Beginning Cash', 'Operating CF', 'Investing CF',
-                                'Financing CF', 'Net Change', 'Ending Cash']
-        for col in display_cash.columns:
-            if col != 'Year':
-                display_cash[col] = display_cash[col].apply(
-                    lambda x: f"C${x:,.3f}M" if pd.notna(x) else "N/A"
-                )
-
-        st.dataframe(display_cash, use_container_width=True, hide_index=True,
-                     column_config={"Year": "Year"})
-        st.caption(
-            "Reconciliation: Ending Cash = Beginning Cash + Operating + Investing + Financing. "
-            "Every year balances to the reported cash position."
-        )
-
-        st.markdown("**Cash Burn & Capital Raised**")
-        display_burn = cash_flow_df[
-            ['fyear', 'Total Cash Burn', 'Financing Cash Flow', 'Working Capital']
-        ].copy()
-        display_burn.columns = ['Year', 'Cash Burn (Op + CAPEX)', 'Net Capital Raised', 'Working Capital']
-        for col in display_burn.columns:
-            if col != 'Year':
-                display_burn[col] = display_burn[col].apply(
-                    lambda x: f"C${x:,.3f}M" if pd.notna(x) else "N/A"
-                )
-        st.dataframe(display_burn, use_container_width=True, hide_index=True,
-                     column_config={"Year": "Year"})
-        st.caption(
-            "**Cash Burn** = negative operating cash flow + capital expenditures. "
-            "**Net Capital Raised** = financing cash flow: positive = capital raised, negative = repayments."
-        )
-    else:
-        st.warning("No cash flow data available")
-
-    st.markdown("---")
-
-    # ---- FINANCIAL OVERVIEW ----
-    st.markdown("**Financial Overview**")
-
-    if not financial_df.empty:
-        display_financial = financial_df[['fyear', 'Total Assets', 'Total Liabilities', 'Total Equity', 'Total Debt']].copy()
-        for col in display_financial.columns:
-            if col != 'fyear':
-                display_financial[col] = display_financial[col].apply(
-                    lambda x: f"C${x:,.3f}M" if pd.notna(x) and isinstance(x, (int, float)) else "N/A"
-                )
-
-        st.dataframe(
-            display_financial,
+    with header_cols[1]:
+        if st.button(
+            "🔔 Notify me when Q2 Cash is known",
+            key="notify_q2_cash",
             use_container_width=True,
-            hide_index=True
+            type="primary",
+        ):
+            track_event("notify_q2_cash_click", {"companies": ", ".join(companies)})
+            st.toast("Thanks! Q2 cash will appear here as soon as it's known. 📊")
+
+    currencies = sorted({a["entry"]["currency"] for a in available})
+    shared_currency = currencies[0] if len(currencies) == 1 else None
+
+    # Expected-cash-runway basis: the data carries two variants (trailing
+    # 2-quarter and trailing 4-quarter average underlying burn). Let the
+    # user pick which one(s) get drawn on the secondary axis.
+    runway_label_to_mode = {
+        "Both (2Q & 4Q)": "both",
+        "Trailing 2Q avg": "2q",
+        "Trailing 4Q avg": "4q",
+    }
+    has_runway_variants = any(
+        {"runway_2q", "runway_4q"} & set(pd.DataFrame(a["entry"]["data"]).columns)
+        for a in available
+    )
+    runway_mode = "both"
+    if has_runway_variants:
+        runway_label = st.radio(
+            "Runway basis",
+            list(runway_label_to_mode.keys()),
+            index=1,  # default: Trailing 2Q avg runway basis
+            horizontal=True,
+            help="Expected cash runway in months, computed with the average "
+                 "underlying cash burn over the trailing 2 or 4 quarters.",
         )
-    else:
-        st.warning("No financial data available")
+        runway_mode = runway_label_to_mode[runway_label]
 
-
-def render_financial_comparison(companies, annual, stock):
-    """Side-by-side financial comparison across companies (annual metrics)."""
-    st.subheader("Financial Analysis — Side by Side")
-
-    # Build financials for each company
-    all_financials = {}
-    for company in companies:
-        cf, mc, fin = build_company_financials(company, annual, stock)
-        if cf is not None and not cf.empty:
-            all_financials[company] = {'cash_flow': cf, 'market_cap': mc, 'financial': fin}
-
-    if not all_financials:
-        st.error("No financial data found for any selected company")
-        return
-
-    # ------------------------------------------------------------------
-    # 1. Latest-year key metrics side-by-side
-    # ------------------------------------------------------------------
-    st.markdown("**Latest Year Key Metrics**")
-
-    rows = []
-    for company, fin_data in all_financials.items():
-        fin = fin_data['financial']
-        cf = fin_data['cash_flow']
-        if fin.empty:
-            continue
-
-        latest = fin.iloc[-1]
-        latest_cf = cf[cf['fyear'] == latest['fyear']]
-        if not latest_cf.empty:
-            latest_cf = latest_cf.iloc[0]
-        else:
-            latest_cf = None
-
-        rows.append({
-            'Company': company,
-            'Year': int(latest['fyear']) if pd.notna(latest['fyear']) else None,
-            'Total Assets ($M)': round(latest['Total Assets'], 1) if pd.notna(latest['Total Assets']) else None,
-            'Total Liabilities ($M)': round(latest['Total Liabilities'], 1) if pd.notna(latest['Total Liabilities']) else None,
-            'Total Equity ($M)': round(latest['Total Equity'], 1) if pd.notna(latest['Total Equity']) else None,
-            'Cash ($M)': round(latest['Cash'], 1) if pd.notna(latest['Cash']) else None,
-            'Total Debt ($M)': round(latest['Total Debt'], 1) if pd.notna(latest['Total Debt']) else None,
-            'Cash Burn ($M)': round(latest_cf['Total Cash Burn'], 1) if latest_cf is not None and pd.notna(latest_cf['Total Cash Burn']) else None,
-            'Net Capital Raised ($M)': round(latest_cf['Financing Cash Flow'], 1) if latest_cf is not None and pd.notna(latest_cf['Financing Cash Flow']) else None,
-        })
-
-    if rows:
-        comp_df = pd.DataFrame(rows)
-        # Format display
-        display_comp = comp_df.copy()
-        for col in display_comp.columns:
-            if col not in ('Company', 'Year'):
-                display_comp[col] = display_comp[col].apply(
-                    lambda v: f"C${v:,.1f}M" if pd.notna(v) else "N/A"
-                )
-        st.dataframe(display_comp, use_container_width=True, hide_index=True)
-        st.caption("Latest available fiscal year per company.")
-
-    # ------------------------------------------------------------------
-    # 2. Combined chart: Cash position over time
-    # ------------------------------------------------------------------
-    st.markdown("**Cash Position Over Time**")
-
-    cash_chart_data = []
-    for company, fin_data in all_financials.items():
-        cf = fin_data['cash_flow']
-        if cf is None or cf.empty:
-            continue
-        for _, row in cf.iterrows():
-            cash_chart_data.append({
-                'Year': row['fyear'],
-                'Company': company,
-                'Cash Position': row['Cash Position'],
-            })
-
-    if cash_chart_data:
-        cash_df = pd.DataFrame(cash_chart_data)
+    def build_cash_chart(entries_list, currency, runway_mode="both"):
+        """Line chart of the cash position per quarter, extended with the
+        financing raised per quarter (bars, only where money was actually
+        raised) and the expected cash runway in months on a secondary
+        right-hand axis. Two runway variants are supported:
+        runway_2q (trailing 2-quarter avg underlying burn) and runway_4q
+        (trailing 4-quarter avg); runway_mode picks which to draw.
+        The y-axis names the actual currency (USD/CAD)."""
         fig = go.Figure()
-        for company in companies:
-            sub = cash_df[cash_df['Company'] == company]
-            if sub.empty:
-                continue
+        for a in entries_list:
+            c = a["company"]
+            df = pd.DataFrame(a["entry"]["data"])
+            display_name = COMPANIES[c]["short_name"]
+            color = COMPANIES[c]["color"]
+
+            # --- Cash position (primary line, left axis) ------------------
             fig.add_trace(go.Scatter(
-                x=sub['Year'],
-                y=sub['Cash Position'],
-                mode='lines+markers',
-                name=company,
-                line=dict(color=COMPANIES[company]['color'], width=3),
-                marker=dict(size=8),
-                customdata=[[company]] * len(sub),
-                hovertemplate='<b>Year %{x}</b><br>%{customdata[0]}<br>Cash: C$%{y:.2f}M<extra></extra>',
-            ))
-
-        fig.update_layout(
-            title='Cash Position by Company (C$M)',
-            xaxis_title='Year',
-            yaxis_title='C$ (M)',
-            template='plotly_white',
-            height=400,
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # ------------------------------------------------------------------
-    # 3. Combined chart: Total Assets vs Market Cap over time
-    # ------------------------------------------------------------------
-    st.markdown("**Total Assets vs Market Cap**")
-
-    asset_data = []
-    for company, fin_data in all_financials.items():
-        fin = fin_data['financial']
-        mc = fin_data['market_cap']
-        if fin.empty or mc.empty:
-            continue
-        merged = pd.merge(fin[['fyear', 'Total Assets']], mc[['fyear', 'market_cap']], on='fyear', how='inner')
-        for _, row in merged.iterrows():
-            asset_data.append({
-                'Year': row['fyear'],
-                'Company': company,
-                'Total Assets': row['Total Assets'],
-                'Market Cap': row['market_cap'],
-            })
-
-    if asset_data:
-        asset_df = pd.DataFrame(asset_data)
-
-        fig = go.Figure()
-        for company in companies:
-            sub = asset_df[asset_df['Company'] == company]
-            if sub.empty:
-                continue
-            color = COMPANIES[company]['color']
-            fig.add_trace(go.Scatter(
-                x=sub['Year'], y=sub['Total Assets'],
-                mode='lines+markers', name=f"{company} — Assets",
-                line=dict(color=color, width=2, dash='dot'),
-                marker=dict(size=7),
-            ))
-            fig.add_trace(go.Scatter(
-                x=sub['Year'], y=sub['Market Cap'],
-                mode='lines+markers', name=f"{company} — Market Cap",
+                x=df["quarter"],
+                y=df["cash"],
+                mode="lines+markers",
+                name="Cash",
+                legendgroup=display_name,
                 line=dict(color=color, width=2.5),
-                marker=dict(size=8),
+                marker=dict(size=9),
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"{display_name} Cash<br>"
+                    f"{currency} <b>%{{y:,.2f}}M</b>"
+                    "<extra></extra>"
+                ),
             ))
 
+            # --- Financing raised (bars, only quarters with a raise) ------
+            fin = df[df["financing"].fillna(0) > 0]
+            if not fin.empty:
+                fig.add_trace(go.Bar(
+                    x=fin["quarter"],
+                    y=fin["financing"],
+                    name="Financing",
+                    legendgroup=display_name,
+                    marker=dict(color=color, opacity=0.40),
+                    hovertemplate=(
+                        "<b>%{x}</b><br>"
+                        f"{display_name} Financing<br>"
+                        f"{currency} <b>%{{y:,.2f}}M</b> raised"
+                        "<extra></extra>"
+                    ),
+                ))
+
+            # --- Expected cash runway (months, secondary right axis) ------
+            def _add_runway(col, label, dash_style, symbol, basis_text=None, line_color=None):
+                if col not in df.columns:
+                    return
+                # basis_text explains the runway methodology, e.g.
+                # "Estimated Cash Runway Calculated on Cash Burn of Last 2
+                # Quartals" for the 2Q variant (which starts at 2024 Q2) and
+                # "...Last 4 Quartals" for the 4Q variant (starts at 2024 Q4).
+                basis_line = f"<i>{basis_text}</i><br>" if basis_text else ""
+                fig.add_trace(go.Scatter(
+                    x=df["quarter"],
+                    y=df[col],
+                    mode="lines+markers",
+                    name=f"Runway {label}".strip(),
+                    legendgroup=display_name,
+                    yaxis="y2",
+                    line=dict(color=line_color or color, width=1.8, dash=dash_style),
+                    marker=dict(size=6, symbol=symbol, color=line_color or color),
+                    connectgaps=False,   # gap where history is insufficient (None)
+                    hovertemplate=(
+                        "<b>%{x}</b><br>"
+                        f"{display_name} – Estimated Cash Runway<br>"
+                        f"{basis_line}"
+                        "<b>%{y:,.1f}</b> months left"
+                        "<extra></extra>"
+                    ),
+                ))
+
+            if "runway_2q" in df.columns or "runway_4q" in df.columns:
+                # New schema: trailing-average underlying burn variants.
+                if runway_mode in ("both", "2q"):
+                    _add_runway("runway_2q", "(2Q)", "dot", "diamond",
+                                "Calculated on cash burn of last 2 quarters",
+                                line_color="#7F8C8D")
+                if runway_mode in ("both", "4q"):
+                    _add_runway("runway_4q", "(4Q)", "dash", "cross",
+                                "Calculated on cash burn of last 4 quarters",
+                                line_color="#7F8C8D")
+            elif "runway" in df.columns:
+                # Legacy fallback: single pre-computed runway column.
+                _add_runway("runway", "", "dot", "diamond", line_color="#7F8C8D")
+
+        # Size the top margin to the horizontal legend so it never overlaps
+        # the chart title. Plotly wraps legend items (~2 per row); reserve
+        # roughly 24px per legend row + a fixed slot for the title itself.
+        legend_rows = max(1, -(-len(fig.data) // 2))  # ceil(items / 2)
+        top_margin = 75 + legend_rows * 24
+
         fig.update_layout(
-            title='Total Assets & Market Cap (C$M)',
-            xaxis_title='Year',
-            yaxis_title='C$ (M)',
-            template='plotly_white',
-            height=400,
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0, font=dict(size=10)),
+            title=dict(
+                text="Cash Position by Quarter",
+                x=0,
+                xanchor="left",
+                y=0.98,
+                yanchor="top",
+                font=dict(weight="normal")
+            ),
+            yaxis_title=f"Cash ({currency} millions)",
+            template="plotly_white",
+            height=420,
+            margin=dict(t=top_margin),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                        itemclick=False, itemdoubleclick=False),
         )
+        # Secondary axis for the runway (months) on the right-hand side.
+        fig.update_layout(
+            yaxis2=dict(
+                title=dict(text="Runway (months)"),
+                overlaying="y",
+                side="right",
+                showgrid=False,
+            )
+        )
+        return fig
+
+    if shared_currency:
+        # All companies report in the same currency: one combined chart with
+        # that currency (USD or CAD) on the y-axis.
+        use_log = False
+        if is_compare:
+            use_log = st.checkbox(
+                "Log scale (companies differ strongly in magnitude)",
+                value=False,
+                key="cash_overview_log_scale",
+            )
+        fig = build_cash_chart(available, shared_currency, runway_mode)
+        if use_log:
+            fig.update_yaxes(type="log")
         st.plotly_chart(fig, use_container_width=True)
 
-    # ------------------------------------------------------------------
-    # 4. Financial overview tables per company (expander)
-    # ------------------------------------------------------------------
-    st.markdown("**Detailed Financial Overview**")
-
-    tab_labels = [COMPANIES[c]['short_name'] for c in companies if c in all_financials]
-    if tab_labels:
+        if is_compare:
+            tab_labels = [COMPANIES[a["company"]]["short_name"] for a in available]
+            tabs = st.tabs(tab_labels)
+            for tab, a in zip(tabs, available):
+                with tab:
+                    _render_cash_table(a)
+        else:
+            _render_cash_table(available[0])
+    else:
+        # Mixed currencies (e.g. USD + CAD): a separate chart per company so
+        # every y-axis shows its own currency.
+        tab_labels = [COMPANIES[a["company"]]["short_name"] for a in available]
         tabs = st.tabs(tab_labels)
-        for tab, company in zip(tabs, [c for c in companies if c in all_financials]):
+        for tab, a in zip(tabs, available):
             with tab:
-                fin = all_financials[company]['financial']
-                cf = all_financials[company]['cash_flow']
-
-                if not fin.empty:
-                    display_financial = fin[['fyear', 'Total Assets', 'Total Liabilities', 'Total Equity', 'Total Debt']].copy()
-                    for col in display_financial.columns:
-                        if col != 'fyear':
-                            display_financial[col] = display_financial[col].apply(
-                                lambda x: f"C${x:,.3f}M" if pd.notna(x) and isinstance(x, (int, float)) else "N/A"
-                            )
-                    st.dataframe(display_financial, use_container_width=True, hide_index=True)
-
-                if not cf.empty:
-                    display_cash = cf[['fyear', 'Beginning Cash', 'Operating Cash Flow',
-                                       'Investing Cash Flow', 'Financing Cash Flow',
-                                       'Net Change in Cash', 'Cash Position']].copy()
-                    display_cash.columns = ['Year', 'Beginning Cash', 'Operating CF', 'Investing CF',
-                                            'Financing CF', 'Net Change', 'Ending Cash']
-                    for col in display_cash.columns:
-                        if col != 'Year':
-                            display_cash[col] = display_cash[col].apply(
-                                lambda x: f"C${x:,.3f}M" if pd.notna(x) else "N/A"
-                            )
-                    st.markdown("**Cash Flow Overview**")
-                    st.dataframe(display_cash, use_container_width=True, hide_index=True)
+                cur = a["entry"]["currency"]
+                st.plotly_chart(build_cash_chart([a], cur, runway_mode), use_container_width=True)
+                _render_cash_table(a)
 
 
+def _render_cash_table(a):
+    """Compact table: Quarter, Cash and Cash Burn per quarter."""
+    entry = a["entry"]
+    cur = entry["currency"]
+    df = pd.DataFrame(entry["data"])
 
+    # Prefer the operating burn (cash burn excluding financing) when present;
+    # it is the figure that drives the runway estimates on the chart.
+    if "underlying_burn" in df.columns:
+        burn_col = "underlying_burn"
+    elif "burn" in df.columns:
+        burn_col = "burn"
+    else:
+        burn_col = None
+
+    cols = ["quarter", "cash"] + ([burn_col] if burn_col else [])
+    display = df[cols].copy()
+    rename = {"quarter": "Quarter", "cash": "Cash"}
+    if burn_col:
+        rename[burn_col] = "Cash Burn"
+    display = display.rename(columns=rename)
+
+    def _fmt(v):
+        if v is None:
+            return ""
+        try:
+            return f"{float(v):,.2f}"
+        except (TypeError, ValueError):
+            return str(v)
+
+    display["Cash"] = display["Cash"].apply(_fmt)
+    if "Cash Burn" in display.columns:
+        display["Cash Burn"] = display["Cash Burn"].apply(_fmt)
+
+    st.dataframe(display, use_container_width=True, hide_index=True)
+    st.caption(f"All amounts in {cur} millions.")
 
 
 def render_timeline(companies=None):
@@ -1666,6 +1544,7 @@ def render_timeline(companies=None):
         for row in TIMELINE_DATA.get(company, []):
             row_copy = dict(row)
             row_copy['Company'] = company
+            row_copy['Status'] = row.get('Status', 'Historical')
             all_rows.append(row_copy)
 
     if not all_rows:
@@ -1694,11 +1573,27 @@ def render_timeline(companies=None):
 
         s_lower = s.lower()
 
+        # 'Ongoing' → today, so in-progress activities are placed at the current date
+        if 'ongoing' in s_lower:
+            return pd.Timestamp.today()
+
+        # Bare '<Year>' (exactly 4 digits) → end of year
+        if re.fullmatch(r'\d{4}', s):
+            return pd.to_datetime(f"{s}-12-31")
+
         # Standard datetime parse
         try:
             return pd.to_datetime(s)
         except Exception:
             pass
+
+        # Half-year references: 'H1 2026' → end of H1, 'H2 2026' → end of H2
+        h_map = {'h1': (6, 30), 'h2': (12, 31)}
+        for h, (month, day) in h_map.items():
+            if h in s_lower:
+                m = re.search(r'(\d{4})', s)
+                if m:
+                    return pd.to_datetime(f"{m.group(1)}-{month:02d}-{day}")
 
         # Quarter references: 'Q1 2019' → end of quarter
         q_map = {'q1': (3, 31), 'q2': (6, 30), 'q3': (9, 30), 'q4': (12, 31)}
@@ -1739,13 +1634,15 @@ def render_timeline(companies=None):
     for company in companies:
         for row in TIMELINE_DATA.get(company, []):
             study = row.get('Study', '')
+            is_future = row.get('Status', 'Historical') == 'Future'
             for date_key, event_type in event_mappings.items():
                 date = parse_timeline_date(row.get(date_key, '—'))
                 if date is not None:
                     event_rows.append({
                         'Company': company,
                         'Study': study,
-                        'Event_Type': event_type,
+                        'Event_Type': 'Planned' if is_future else event_type,
+                        'Status': 'Future' if is_future else 'Historical',
                         'Date': date,
                     })
 
@@ -1754,21 +1651,40 @@ def render_timeline(companies=None):
 
     events_df = pd.DataFrame(event_rows)
 
+    # ------------------------------------------------------------------
+    # Historical vs planned/ongoing milestones: compute the split point
+    # ------------------------------------------------------------------
+    planned_events = events_df[events_df['Status'] == 'Future']
+    split_date = planned_events['Date'].min() if not planned_events.empty else None
+    x_min_all = events_df['Date'].min()
+    x_max_all = events_df['Date'].max()
+
     # Sort studies for consistent y-axis ordering
     study_order = ['MRE', 'MRE_U', 'PEA', 'PEA_U', 'PFS', 'FS', 'FS_U',
                    'PoO_Submitted', 'PoO_Accepted', 'PoO_Approved',
                    'NEPA_Start', 'Final_EIS', 'Final_EA',
                    'Record of Decision', 'FID', 'FAST41_Transparency',
-                   'FAST41_Covered', 'Fully_Permitted']
+                   'FAST41_Covered', 'Fully_Permitted',
+                   # Upcoming / futuristic milestones (2026 and later)
+                   'Pilot Operations', 'Second Recycling Facility',
+                   'DOE Grant Reinstatement', 'Definitive Feasibility Study',
+                   'Commercial Production (Phase 1)', 'BLM Comments on Draft PoO',
+                   'Finalize Mine Plan of Operations', 'Demonstration Plant Construction',
+                   'Strategic Partnering / Offtake', 'Sign MOUs with KIND & Hyundai',
+                   'Final Investment Decision', 'First Commercial Production',
+                   'Definitive Capital Estimate', 'Mechanical Completion (Phase 1)',
+                   'Commercial Production', 'Scaled-up Leach & Separation Testing',
+                   'Flowsheet Optimization', 'Defense Supply Chain Integration']
 
     existing_studies = [s for s in study_order if s in events_df['Study'].unique()]
     remaining_studies = [s for s in events_df['Study'].unique() if s not in existing_studies]
     y_order = existing_studies + remaining_studies
     y_order_rev = y_order[::-1]
 
-    colors = {'Commitment': '#F39C12', 'Expected': '#E74C3C', 'Actual': '#2E86C1'}
-    symbols = {'Commitment': 'diamond-open', 'Expected': 'diamond-open', 'Actual': 'circle'}
-    sizes = {'Commitment': 12, 'Expected': 12, 'Actual': 14}
+    colors = {'Commitment': '#F39C12', 'Expected': '#E74C3C', 'Actual': '#2E86C1', 'Planned': '#8E44AD'}
+    symbols = {'Commitment': 'diamond-open', 'Expected': 'diamond-open', 'Actual': 'circle', 'Planned': 'triangle-up-open'}
+    sizes = {'Commitment': 12, 'Expected': 12, 'Actual': 14, 'Planned': 14}
+    event_labels = {'Commitment': 'Commitment', 'Expected': 'Expected', 'Actual': 'Actual', 'Planned': 'Planned / Ongoing'}
 
     fig = go.Figure()
 
@@ -1809,7 +1725,7 @@ def render_timeline(companies=None):
         for company in companies:
             comp_color = COMPANIES[company]['color']
             comp_events = events_df[events_df['Company'] == company]
-            for event_type in ['Commitment', 'Expected', 'Actual']:
+            for event_type in ['Commitment', 'Expected', 'Actual', 'Planned']:
                 sub = comp_events[comp_events['Event_Type'] == event_type]
                 if sub.empty:
                     continue
@@ -1817,7 +1733,7 @@ def render_timeline(companies=None):
                     x=sub['Date'],
                     y=sub['Study'],
                     mode='markers',
-                    name=f"{COMPANIES[company]['short_name']} — {event_type}",
+                    name=f"{COMPANIES[company]['short_name']} — {event_labels.get(event_type, event_type)}",
                     marker=dict(
                         color=comp_color,
                         size=sizes.get(event_type, 11),
@@ -1827,11 +1743,11 @@ def render_timeline(companies=None):
                     hovertemplate=(
                         f'<b>{company}</b><br>'
                         f'<b>%{{y}}</b><br>'
-                        f'{event_type}: %{{x|%d-%m-%Y}}<extra></extra>'
+                        f'{event_labels.get(event_type, event_type)}: %{{x|%d-%m-%Y}}<extra></extra>'
                     ),
                 ))
     else:
-        for event_type in ['Commitment', 'Expected', 'Actual']:
+        for event_type in ['Commitment', 'Expected', 'Actual', 'Planned']:
             sub = events_df[events_df['Event_Type'] == event_type]
             if sub.empty:
                 continue
@@ -1839,7 +1755,7 @@ def render_timeline(companies=None):
                 x=sub['Date'],
                 y=sub['Study'],
                 mode='markers+text',
-                name=event_type,
+                name=event_labels.get(event_type, event_type),
                 marker=dict(
                     color=colors.get(event_type, '#95A5A6'),
                     size=sizes.get(event_type, 11),
@@ -1848,10 +1764,10 @@ def render_timeline(companies=None):
                 ),
                 text=sub['Study'],
                 textposition='middle right',
-                textfont=dict(size=12, color='#2C3E50'),
+                textfont=dict(size=10, color='#2C3E50'),
                 hovertemplate=(
                     f'<b>%{{y}}</b><br>'
-                    f'{event_type}: %{{x|%d-%m-%Y}}<extra></extra>'
+                    f'{event_labels.get(event_type, event_type)}: %{{x|%d-%m-%Y}}<extra></extra>'
                 ),
             ))
 
@@ -1866,11 +1782,11 @@ def render_timeline(companies=None):
             y=1.02 if not is_compare else 1.05,
             xanchor='center',
             x=0.5,
-            font=dict(size=12)
+            font=dict(size=10)
         ),
         yaxis=dict(
             title=None,
-            tickfont=dict(size=12, color='#2C3E50'),
+            tickfont=dict(size=10, color='#2C3E50'),
             categoryorder='array',
             categoryarray=y_order_rev,
             tickmode='array',
@@ -1882,7 +1798,7 @@ def render_timeline(companies=None):
         ),
         xaxis=dict(
             title=None,
-            tickfont=dict(size=11),
+            tickfont=dict(size=10),
             tickformat='%b %Y',
             gridcolor='#ECF0F1',
             gridwidth=1,
@@ -1897,12 +1813,40 @@ def render_timeline(companies=None):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Split line + shading: historical milestones (left) vs planned (right)
+    # ------------------------------------------------------------------
+    # Pad the x-range; add extra room on the right so the 'middle right'
+    # study labels are not clipped at the plot edge.
+    pad = (x_max_all - x_min_all) * 0.08
+    right_pad = (x_max_all - x_min_all) * 0.25
+    fig.update_xaxes(range=[x_min_all - pad, x_max_all + pad + right_pad])
+
+    if split_date is not None:
+        fig.add_vrect(
+            x0=split_date, x1=x_max_all + pad,
+            fillcolor="rgba(142, 68, 173, 0.05)",
+            line_width=0,
+            layer="below",
+        )
+        fig.add_vline(
+            x=split_date,
+            line_dash="dash",
+            line_color="#8E44AD",
+            line_width=1.5,
+        )
+
     st.plotly_chart(fig, use_container_width=True, key="timeline_chart")
 
     # Show the table (grouped by company when in comparison)
-    display_cols = ['Company', 'Study', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
+    display_cols = ['Company', 'Study', 'Status', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
     if not is_compare:
-        display_cols = ['Study', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
+        display_cols = ['Study', 'Status', 'Commitment date', 'Expected date', 'Actual date', 'Delay']
+
+    if 'Status' in timeline_df.columns:
+        timeline_df['Status'] = timeline_df['Status'].map(
+            lambda v: 'Planned / Ongoing' if v == 'Future' else 'Historical'
+        )
 
     present_cols = [c for c in display_cols if c in timeline_df.columns]
     st.dataframe(timeline_df[present_cols], use_container_width=True, hide_index=True)
@@ -2096,6 +2040,58 @@ def apply_styles():
         font-size: 12px !important;
         color: #888 !important;
     }
+    
+    /* Notify-me call-to-action buttons (light green, eye-catching).
+       Streamlit >= 1.39 exposes every element key as a "st-key-<key>"
+       CSS class, so these rules only hit the two notify buttons. */
+    .st-key-notify_q2_cash button,
+    .st-key-notify_interview button {
+        background-color: #D8F3DC !important;
+        color: #1B4332 !important;
+        border: 1.5px solid #40916C !important;
+        font-weight: 600 !important;
+        box-shadow: 0 1px 4px rgba(64, 145, 108, 0.35) !important;
+    }
+    
+    .st-key-notify_q2_cash button:hover,
+    .st-key-notify_interview button:hover,
+    .st-key-notify_q2_cash button:focus,
+    .st-key-notify_interview button:focus {
+        background-color: #B7E4C7 !important;
+        color: #1B4332 !important;
+        border-color: #2D6A4F !important;
+    }
+    
+    /* "Coming soon" placeholder tiles (1D / 7D / 30D search interest) */
+    .coming-soon-box {
+        border: 2px dashed #A3CBB9 !important;
+        border-radius: 10px !important;
+        background: #F4FBF7 !important;
+        padding: 1.1rem 0.75rem !important;
+        text-align: center !important;
+        min-height: 118px !important;
+    }
+    .coming-soon-window {
+        font-size: 26px !important;
+        font-weight: 700 !important;
+        color: #2D6A4F !important;
+        letter-spacing: 1px !important;
+    }
+    .coming-soon-label {
+        font-size: 12.5px !important;
+        color: #6B7C74 !important;
+        margin-top: 2px !important;
+    }
+    .coming-soon-badge {
+        display: inline-block !important;
+        margin-top: 8px !important;
+        padding: 2px 10px !important;
+        border-radius: 999px !important;
+        background: #D8F3DC !important;
+        color: #1B4332 !important;
+        font-size: 11.5px !important;
+        font-weight: 600 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2125,8 +2121,22 @@ def render_sentiment_analysis(companies=None):
         companies = list(COMPANIES.keys())
     is_compare = len(companies) > 1
 
-    st.subheader("Sentiment Analysis")
-    st.caption("YouTube interviews & coverage over time")
+    # Header row: title left, "notify me" call-to-action far right.  Clicks
+    # are tracked in GA4 (notify_interview_click) to measure demand for
+    # new-interview alerts.
+    header_cols = st.columns([0.72, 0.28], vertical_alignment="center")
+    with header_cols[0]:
+        st.subheader("Sentiment Analysis")
+        st.caption("YouTube interviews & coverage over time")
+    with header_cols[1]:
+        if st.button(
+            "🔔 Notify me at new Interview",
+            key="notify_interview",
+            use_container_width=True,
+            type="primary",
+        ):
+            track_event("notify_interview_click", {"companies": ", ".join(companies)})
+            st.toast("Thanks! You'll be alerted when a new interview drops. 🎥")
 
     # ------------------------------------------------------------------
     # Collect YouTube video records for the selected companies (config.py)
@@ -2152,11 +2162,17 @@ def render_sentiment_analysis(companies=None):
 
     if not rows:
         st.info("No YouTube interview data available for the selected company(ies) yet.")
+        # Still show the 'coming soon' teaser tiles so every company keeps
+        # the same layout — with or without interview data.
+        _render_coming_soon_tiles("Youtube Search Interest graph")
         return
 
     df = pd.DataFrame(rows)
     df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values("Date", ascending=True).reset_index(drop=True)
+    # Newest interviews first: the table below acts as a "what's latest"
+    # list.  The bubble chart positions points by date on the x-axis, so
+    # the sort order does not affect it.
+    df = df.sort_values("Date", ascending=False).reset_index(drop=True)
 
     # ------------------------------------------------------------------
     # 1. Video table (newest first)
@@ -2176,6 +2192,14 @@ def render_sentiment_analysis(companies=None):
             "URL": st.column_config.LinkColumn("Video", display_text="Watch ▶", width="small"),
         },
     )
+
+    # ------------------------------------------------------------------
+    # Coming soon: YouTube search-interest graphs (1D / 7D / 30D) —
+    # the same teaser tiles as in the Google Trends section.
+    # ------------------------------------------------------------------
+    _render_coming_soon_tiles("Youtube Search Interest graph")
+    st.markdown("")
+    st.markdown("")
 
     # ------------------------------------------------------------------
     # 2. Interview timeline chart: when (x-axis) × views (y-axis),
