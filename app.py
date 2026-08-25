@@ -121,7 +121,7 @@ with st.container():
     "Upcoming upgrades:\n"
     "Monitoring Future to measure Interest For the Firm, (Lithium) interest in Nevada, And in Lithium in General.\n\n"
     "Integrating News Sources, i.e. LinkedIn, X, Company Press Releases, YT Interview.\n\n"
-    "📅 31-08-2026: Version 4 will be deployed (existing link)."
+    "📅 31-08-2026: Version 3 will be deployed (existing link)."
 )
 
     if 'data_source' in st.session_state:
