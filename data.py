@@ -172,21 +172,8 @@ def _fetch_cluster_stock_data(period_days):
         df_all["Date"] = pd.to_datetime(df_all["Date"], utc=True).dt.tz_localize(None)
         df_all = df_all.sort_values("Date")
 
-        if period_days == 1:
-            # 1D view anchors EVERY ticker to its OWN most recent trading
-            # session (Yahoo style): the line runs from that session's open
-            # to "now" and updates live.  A rolling 24-hour cut would append
-            # yesterday's tail mid-line (overnight gap) and shift the
-            # start=100 base on every refresh; one single cut-off date for
-            # the whole cluster would drop the US lines whenever only the
-            # Australian session is running (e.g. European mornings).
-            latest_session = df_all.groupby("Ticker")["Date"].transform(
-                lambda s: s.max().date()
-            )
-            df = df_all[df_all["Date"].dt.date == latest_session]
-        else:
-            cutoff = df_all["Date"].max() - pd.Timedelta(days=period_days)
-            df = df_all[df_all["Date"] >= cutoff]
+        cutoff = df_all["Date"].max() - pd.Timedelta(days=period_days)
+        df = df_all[df_all["Date"] >= cutoff]
 
         parts = []
         session_end = df["Date"].max()
@@ -198,14 +185,6 @@ def _fetch_cluster_stock_data(period_days):
                 # to the ticker's last bars from the FULL fetch — the sliced
                 # frame would only return the same lone bar again.
                 fallback = df_all[df_all["Ticker"] == ticker].tail(2)
-                if period_days == 1:
-                    # 1D anchors each ticker to its OWN latest session: drop
-                    # any fallback bars from earlier days so stale prices can't
-                    # leak into the line.  (Use the fallback's own max date so
-                    # the boolean mask aligns, instead of comparing two
-                    # differently-indexed Series.)
-                    ticker_session = fallback["Date"].max().date()
-                    fallback = fallback[fallback["Date"].dt.date == ticker_session]
                 if len(fallback) > len(group):
                     group = fallback.copy()
             if period_days == 1 and len(group) >= 2 \
