@@ -89,6 +89,21 @@ apply_styles()
 track_page_loaded()
 
 # ============================================================================
+# TEMP GA4 DEBUG — open de app met ?ga4_debug=1 in de URL om te zien welke
+# Measurement-ID deze draaiende app werkelijk gebruikt (handig om te checken
+# of Streamlit Cloud de nieuwe property-id heeft overgenomen).
+# Een Measurement-ID is geen geheim (staat al in de browser-HTML van elke
+# bezoeker), dus dit mag publiek. Verwijder dit blok na verificatie.
+# ============================================================================
+if st.query_params.get("ga4_debug") == "1":
+    from data import GA4_ID as _active_ga4_id
+
+    if _active_ga4_id:
+        st.sidebar.info(f"Actieve GA4 Measurement-ID: `{_active_ga4_id}`")
+    else:
+        st.sidebar.warning("GA4_ID is LEEG — er wordt momenteel niets getrackt!")
+
+# ============================================================================
 # MAIN APP
 # ============================================================================
 with st.container():
