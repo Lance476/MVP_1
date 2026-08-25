@@ -133,18 +133,7 @@ def stock_cache_ttl_label(period_days):
     return f"{seconds // 60} min"
 
 
-def get_cluster_stock_data(period_days=365):
-    """Public wrapper: resolve the per-window TTL, then use the shared cache."""
-    ttl = STOCK_CACHE_TTL_SECONDS.get(period_days, 3600)
-    return _get_cluster_stock_data_cached(period_days, ttl)
-
-
-@st.cache_data(show_spinner="Fetching stock data (Yahoo Finance)…")
-def _get_cluster_stock_data_cached(period_days, ttl):
-    # NOTE: *ttl* is deliberately part of the signature — st.cache_data needs
-    # a static decorator-level ttl, but each window has its own refresh rate.
-    # Since the ttl for a given window never changes, this yields exactly one
-    # cache entry per window with the correct expiry behaviour.
+def _fetch_cluster_stock_data(period_days):
     """Fetch, filter and normalise cluster stock history for the chart.
 
     Fetches every cluster ticker at the interval matching *period_days*
@@ -222,6 +211,41 @@ def _get_cluster_stock_data_cached(period_days, ttl):
         result[cluster_key] = pd.concat(parts, ignore_index=True)
 
     return result
+
+
+def _make_cluster_cache(period_days):
+    """Build one cached fetcher for *period_days* with its OWN static ttl.
+
+    st.cache_data requires the ttl to be fixed at decoration time, so each
+    chart window gets its own tiny wrapper.  Without a decorator-level ttl a
+    cache entry never expires while the app runs — which froze the charts on
+    their very first fetch (the "still showing yesterday" bug).
+    *period_days* is ALSO passed as an argument so every window lands on its
+    own cache entry regardless of how Streamlit hashes closures.
+    """
+    @st.cache_data(
+        ttl=STOCK_CACHE_TTL_SECONDS[period_days],
+        show_spinner="Fetching stock data (Yahoo Finance)…",
+    )
+    def _cached(window):
+        return _fetch_cluster_stock_data(window)
+
+    return _cached
+
+
+# One cached fetcher per chart window (1D, 7D, 30D, 90D, 1Y).
+_CLUSTER_CACHE_BY_WINDOW = {
+    days: _make_cluster_cache(days) for days in STOCK_INTERVAL_CONFIG
+}
+
+
+def get_cluster_stock_data(period_days=365):
+    """Public wrapper: pick the per-window cached fetcher and call it."""
+    cached_fetch = _CLUSTER_CACHE_BY_WINDOW.get(period_days)
+    if cached_fetch is None:
+        # Unknown window -> fall back to the 1-year (daily bars) cache.
+        cached_fetch = _CLUSTER_CACHE_BY_WINDOW[365]
+    return cached_fetch(period_days)
 
 
 import numpy as np
