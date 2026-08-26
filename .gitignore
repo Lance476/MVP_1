@@ -17,3 +17,5 @@ feedback.csv
 *.log
 node_modules/
 
+
+_backup_*/

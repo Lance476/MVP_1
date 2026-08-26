@@ -3,6 +3,7 @@ yfinance
 pandas
 numpy
 altair
+matplotlib
 requests
 plotly
 streamlit-google-analytics-tag

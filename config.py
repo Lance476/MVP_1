@@ -53,13 +53,6 @@ COMPANIES = {
         "short_name": "Surge",
         "color": "#E67E22",
     },
-    "Noram Lithium": {
-        "gvkey": 187729,
-        "yf_ticker": "NRM.V",
-        "search_terms": ['"Noram Lithium"', '"NRM stock"', 'Zeus'],
-        "short_name": "Noram",
-        "color": "#16A085",
-    },
     "American Lithium Corp": {
         "gvkey": 107393,
         "yf_ticker": "LIACF",
@@ -74,38 +67,107 @@ DEFAULT_COMPANY = "Century Lithium"
 # ============================================================================
 # STOCK PERFORMANCE CLUSTERS
 # ============================================================================
-# Grouped stock performance comparison so investors can compare Nevada
-# lithium juniors vs Canadian juniors vs Australian producers.
+# Grouped stock performance comparison so investors can compare lithium
+# juniors from every region producing the commodity.
 # Each entry maps a display label to its Yahoo Finance ticker.
 # ============================================================================
 STOCK_CLUSTERS = {
+
+    # =========================
+    # 🇺🇸 USA
+    # =========================
+
     "Nevada Juniors": {
-        "label": "Nevada Lithium Juniors",
+        "label": "USA",
         "members": {
             "Lithium Americas": "LAC",
             "American Battery Technology": "ABAT",
             "Ioneer": "IONR",
             "Century Lithium": "LCE.V",
             "Surge Battery Metals": "NILIF",
-            "Noram Lithium": "NRM.V",
-            "Nevada Lithium": "NVLHF",
-        },
+        }
     },
-    "Canadian Juniors": {
-        "label": "Canadian Lithium Juniors",
+
+    # =========================
+    # 🇨🇦 CANADA
+    # =========================
+
+    "Canada Juniors": {
+        "label": "Canada",
         "members": {
-            "E3 Lithium": "ETL.V",
-            "Patriot Battery Metals": "PMET.TO",
-            "Critical Elements Lithium": "CRE.V",
-        },
+            "Patriot Battery Metals": "PMET",
+            "Frontier Lithium": "FL",
+            "Brunswick Exploration": "BRW",
+            "Lithium Ionic": "LTH.V",
+            "E3 Lithium": "ETL",
+            "Rock Tech Lithium": "RCK.V",
+        }
     },
-    "Australian Producers + Benchmark": {
-        "label": "Australian Producers",
+
+    # =========================
+    # 🇦🇷🇨🇱🇧🇴 LITHIUM TRIANGLE
+    # =========================
+
+    "Lithium Triangle Juniors": {
+        "label": "Lithium Triangle",
         "members": {
-            "Pilbara Minerals": "PLS.AX",
-            "Mineral Resources": "MIN.AX",
+            "Galan Lithium": "GLN.AX",
+            "Lake Resources": "LKE.AX",
+            "Lithium Argentina": "LAR.TO",
+            "Lithium Chile": "LITH.V",
+        }
+    },
+
+    # =========================
+    # 🇦🇺 AUSTRALIA
+    # =========================
+
+    "Australia Juniors": {
+        "label": "Australia",
+        "members": {
+            "Delta Lithium": "DLI.AX",
+            "Core Lithium": "CXO.AX",
             "Liontown Resources": "LTR.AX",
-        },
+        }
+    },
+
+    # =========================
+    # 🇧🇷 BRAZIL
+    # =========================
+
+    "Brazil Juniors": {
+        "label": "Brazil",
+        "members": {
+            "Atlas Lithium": "ATLX",
+            "Sigma Lithium": "SGML",
+        }
+    },
+
+    # =========================
+    # 🌍 AFRICA
+    # =========================
+
+    "Africa Juniors": {
+        "label": "Africa",
+        "members": {
+            "Atlantic Lithium": "ALLIF",
+            "Kodal Minerals": "KOD.L",
+            "Tantalex Lithium Resources": "TTX.V",
+        }
+    },
+
+    # =========================
+    # 🇪🇺 EUROPE
+    # =========================
+
+    "Europe Juniors": {
+        "label": "Europe",
+        "members": {
+            "European Lithium": "EUR.AX",
+            "Vulcan Energy": "VUL.AX",
+            "Savannah Resources": "SAV.L",
+            "European Metals Holdings": "EMH.L",
+        }
     },
 }
 
@@ -156,10 +218,6 @@ SEARCH_DATA = {
         "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
         "values": [110, 140, 480, 210, 210, 320, 260, 170, 170, 210, 260, 170],
     },
-    "Noram Lithium": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
-        "values": [10, 20, 40, 20, 20, 20, 20, 10, 10, 10, 20, 10],
-    },
     "lithium stocks": {
         "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026"],
         "values": [5400, 8100, 12100, 3600, 3600, 6600, 4400, 3600, 3600, 4400, 2900],
@@ -169,12 +227,6 @@ SEARCH_DATA = {
         "values": [390, 480, 590, 390, 390, 480, 2900, 480, 320, 390, 320],
     },
 }
-
-# ============================================================================
-# MARKT BENCHMARK (Sprott Lithium Miners ETF)
-# ============================================================================
-LIT_TICKER = "LITP"
-LIT_LABEL = "Sprott Lithium Miners ETF (LITP)"
 
 # ============================================================================
 # STUDY STAGE LABELS & ORDER
@@ -355,35 +407,6 @@ STUDY_DATA = {
     },
 
     # ------------------------------------------------------------------
-    # Zeus — Noram Lithium Corp (gvkey 187729)
-    # ------------------------------------------------------------------
-    "Noram Lithium": {
-        "Stage": ["MRE", "MRE_U", "PEA", "MRE_U2", "MRE_U3"],
-        "Stage_Display": [
-            "Mineral Resource Estimate",
-            "Mineral Resource Estimate (Updated)",
-            "Preliminary Economic Assessment",
-            "Mineral Resource Estimate (Updated)",
-            "Mineral Resource Estimate (Updated)"
-        ],
-        "Date": ["2017-07-24", "2021-08-16", "2021-12-08", "2023-01-30", "2024-06-11"],
-        "PressRelease_Date": ["24-7-2017", "16-8-2021", "8-12-2021", "30-1-2023", "11-6-2024"],
-        "AfterTax_NPV_M": [None, None, 1299, None, None],
-        "AfterTax_IRR_%": [None, None, 31, None, None],
-        "Initial_Capex_M": [None, None, None, None, None],
-        "Total_Capex_M": [None, None, None, None, None],
-        "Resource_Measured_Indicated_Mt": [None, None, None, None, None],
-        "Resource_Inferred_Mt": [None, None, None, None, None],
-        "Average_Lithium_Grade": [None, None, None, None, None],
-        "Metallurgical_Recovery_%": [None, None, None, None, None],
-        "Life_of_Mine_Years": [None, None, None, None, None],
-        "Avg_Annual_Production_tpa": [None, None, 31900, None, None],
-        "Net_Operating_Cost_t": [None, None, 3355, None, None],
-        "BaseCase_Li_Price": [None, None, None, None, None],
-        "Payback_Period_Years": [None, None, 3.23, None, None],
-    },
-
-    # ------------------------------------------------------------------
     # TLC — American Lithium Corp (gvkey 107393)
     # ------------------------------------------------------------------
     "American Lithium Corp": {
@@ -511,14 +534,6 @@ TIMELINE_DATA = {
         {"Study": "Scaled-up Leach & Separation Testing", "Commitment date": "—", "Expected date": "Q3 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
         {"Study": "PFS", "Commitment date": "—", "Expected date": "Q4 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
         {"Study": "Flowsheet Optimization", "Commitment date": "—", "Expected date": "Ongoing", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
-    ],
-    "Noram Lithium": [
-        {"Study": "MRE", "Commitment date": "20-07-2016", "Expected date": "—", "Actual date": "24-07-2017", "Delay": "—", "Commitment Evidence": "Subsurface exploration in the form of shallow drilling core holes will be required to determine a preliminary resource estimate of the lithium and potassium contained within the near surface area central to the Zeus claims.", "Expected Evidence": "—"},
-        {"Study": "MRE_U", "Commitment date": "29-10-2020", "Expected date": "30-03-2021", "Actual date": "16-08-2021", "Delay": "~4 months", "Commitment Evidence": "Noram expects to complete an updated NI 43-101 compliant resource estimate report by the end of Q1 2021.", "Expected Evidence": "—"},
-        {"Study": "PEA", "Commitment date": "30-07-2020", "Expected date": "31-12-2020", "Actual date": "08-12-2021", "Delay": "~11 months", "Commitment Evidence": "planning engineering and economic studies toward a Preliminary Economic Assessment in 2020 (PEA).", "Expected Evidence": "—"},
-        {"Study": "MRE_U", "Commitment date": "30-07-2022", "Expected date": "—", "Actual date": "30-01-2023", "Delay": "—", "Commitment Evidence": "Phase VI drilling in mid-2022", "Expected Evidence": "—"},
-        {"Study": "MRE_U", "Commitment date": "07-11-2023", "Expected date": "—", "Actual date": "11-06-2024", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—"},
-        {"Study": "PEA_U", "Commitment date": "—", "Expected date": "Late October 2026", "Actual date": "—", "Delay": "—", "Commitment Evidence": "—", "Expected Evidence": "—", "Status": "Future"},
     ],
     "American Lithium Corp": [
         {"Study": "MRE", "Commitment date": "19-06-2019", "Expected date": "30-12-2019", "Actual date": "21-05-2020", "Delay": "~4 months", "Commitment Evidence": "With drilling ongoing, the company expects to deliver a maiden resource and early stage economic study in 2019.", "Expected Evidence": "—"},

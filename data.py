@@ -42,14 +42,12 @@ import pandas as pd
 import yfinance as yf
 import streamlit as st
 
-from config import LIT_LABEL, LIT_TICKER, STOCK_CLUSTERS, TIME_PERIODS
+from config import STOCK_CLUSTERS, TIME_PERIODS
 
 
 @st.cache_data(ttl=21600)  # 6h — 5y DAILY history used for market cap & 30d metrics
 def get_stock_data(companies=None):
     """Fetch and normalize stock data for the selected companies.
-
-    Always includes the Sprott Lithium Miners ETF (LITP) as a sector benchmark.
 
     Parameters
     ----------
@@ -79,12 +77,6 @@ def get_stock_data(companies=None):
             data["Ticker"] = display
             all_data.append(data)
 
-    # Always include the Sprott Lithium Miners ETF benchmark
-    lit = fetch_ticker(LIT_TICKER)
-    if not lit.empty:
-        lit["Ticker"] = LIT_LABEL
-        all_data.append(lit)
-
     if all_data:
         data = pd.concat(all_data, ignore_index=True)
         return data
@@ -97,13 +89,14 @@ def get_stock_data(companies=None):
 # ===========================================================================
 # Yahoo caps how far back each intraday interval reaches:
 #   1m -> ~7 days | 5m / 15m / 30m -> 60 days | 1h -> 730 days
-# So each window gets the DENSEST interval Yahoo allows:
-#   1D -> 1m | 7D -> 5m | 30D -> 5m | 90D -> 1h (sub-hourly stops at 60 days)
-#   1Y -> daily
+# 1D uses 5m bars so the live chart shows real trades (matching the
+# matplotlib intraday renderer / TestGraph.py); 1m would only flood the
+# screen with empty fill-in for illiquid names.
+#   1D -> 5m | 7D -> 5m | 30D -> 5m | 90D -> 1h | 1Y -> daily
 # Illiquid tickers only print a bar when a trade happens, so they can stay
 # sparse regardless of interval.
 STOCK_INTERVAL_CONFIG = {
-    1:   {"period": "5d",  "interval": "1m"},
+    1:   {"period": "1d",  "interval": "5m"},
     7:   {"period": "1mo", "interval": "5m"},
     30:  {"period": "1mo", "interval": "5m"},
     90:  {"period": "3mo", "interval": "1h"},
@@ -116,7 +109,7 @@ STOCK_INTERVAL_CONFIG = {
 # noticing.  This keeps total Yahoo Finance traffic low on Streamlit
 # Cloud while the 1D chart still feels fresh.
 STOCK_CACHE_TTL_SECONDS = {
-    1:   180,    # 3 min  — quasi-live intraday (1m bars)
+    1:   180,    # 3 min  — quasi-live intraday (5m bars)
     7:   900,    # 15 min
     30:  3600,   # 1 hour
     90:  21600,  # 6 hours
@@ -246,6 +239,109 @@ def get_cluster_stock_data(period_days=365):
         # Unknown window -> fall back to the 1-year (daily bars) cache.
         cached_fetch = _CLUSTER_CACHE_BY_WINDOW[365]
     return cached_fetch(period_days)
+
+
+@st.cache_data(ttl=3600)  # 1h — daily bars barely move intraday
+def get_equity_stock_data(cluster_key):
+    """Daily 1-year Close history for every stock in one cluster.
+
+    Returns a DataFrame with columns ``Date``, ``Close``, ``Ticker`` where
+    ``Ticker`` is the human-readable display name of each member of the
+    cluster.  Used by the "Equity Markets" drill-down so each individual
+    stock can be plotted (indexed to 100) and its 1D/7D/30D/1Y returns
+    computed from a single daily fetch.
+    """
+    cluster = STOCK_CLUSTERS.get(cluster_key)
+    if not cluster:
+        return pd.DataFrame()
+
+    frames = []
+    for display, ticker in cluster["members"].items():
+        try:
+            df = yf.Ticker(ticker).history(period="1y", interval="1d").reset_index()
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+            continue
+        if df.empty:
+            continue
+        # Intraday/raw bars can come back with a "Datetime" index column.
+        if "Datetime" in df.columns:
+            df = df.rename(columns={"Datetime": "Date"})
+        df = df[["Date", "Close"]].dropna(subset=["Close"])
+        df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_localize(None)
+        df = df.sort_values("Date").reset_index(drop=True)
+        df["Ticker"] = display
+        df["Symbol"] = ticker
+        frames.append(df)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+# ===========================================================================
+# INTRADAY (1D) STOCK DATA — raw prices for the matplotlib renderer
+# ===========================================================================
+# The 1D view shows live intraday price action (5-minute bars) at the actual
+# ticker price — NOT the indexed-to-100 chart used by the multi-day Altair
+# view.  See TestGraph.py for the reference visual format.
+# Refreshed every STOCK_CACHE_TTL_SECONDS[1] (3 min) so returning visitors
+# see near-real-time movement — the "live" reason to come back.
+@st.cache_data(
+    ttl=STOCK_CACHE_TTL_SECONDS[1],
+    show_spinner="Fetching today's intraday data (Yahoo Finance)…",
+)
+def get_intraday_stock_data():
+    """Fetch 1D intraday data (5m bars) for every cluster ticker.
+
+    Returns
+    -------
+    dict[str, list[dict]]
+        Keyed by cluster_key.  Each value is a list of per-ticker dicts with
+        keys: ``display`` (label), ``ticker`` (yf symbol), ``name`` (display
+        name), ``currency`` and ``data`` (DataFrame with tz-naive ``Date`` +
+        ``Close`` columns).  No normalisation is applied — prices stay real so
+        the matplotlib renderer can plot them with open/close lines like
+        TestGraph.py.
+    """
+    result = {}
+    for cluster_key, cluster in STOCK_CLUSTERS.items():
+        members = []
+        for display, ticker in cluster["members"].items():
+            try:
+                stock = yf.Ticker(ticker)
+                df = stock.history(period="1d", interval="5m")
+                if df.empty:
+                    continue
+                df = df.reset_index()
+                # Intraday bars come back with a "Datetime" index column.
+                if "Datetime" in df.columns:
+                    df = df.rename(columns={"Datetime": "Date"})
+                df = df[["Date", "Close"]].dropna(subset=["Close"])
+                if df.empty:
+                    continue
+                # Strip timezone so matplotlib date-formatters work cleanly.
+                df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_localize(None)
+                df = df.sort_values("Date").reset_index(drop=True)
+            except Exception as e:
+                print(f"Error fetching intraday {ticker}: {e}")
+                continue
+            # Currency is a separate (slower) call; fall back to USD.
+            currency = "USD"
+            try:
+                currency = stock.info.get("currency", "USD")
+            except Exception:
+                pass
+            members.append({
+                "display": display,
+                "ticker": ticker,
+                "name": display,
+                "currency": currency,
+                "data": df,
+            })
+        if members:
+            result[cluster_key] = members
+    return result
 
 
 import numpy as np
@@ -736,7 +832,7 @@ def build_company_financials(company, annual, stock):
 import pandas as pd
 import streamlit as st
 
-from config import COMPANIES, LIT_LABEL
+from config import COMPANIES
 
 
 @st.cache_data(ttl=3600)  # 1h — no TTL here froze 'current' prices until restart
@@ -824,15 +920,6 @@ def get_dashboard_metrics(companies=None):
                 'search_change': search_change,
             }
 
-        # LIT benchmark metrics
-        lit_data = stock_data[stock_data['Ticker'] == LIT_LABEL]
-        if len(lit_data) >= 2:
-            lit_current, lit_return = calc_30d_return(lit_data)
-            metrics['_lit_benchmark'] = {
-                'current': lit_current,
-                'return_30d': lit_return,
-            }
-
         return metrics
     except Exception as e:
         print(f"get_dashboard_metrics error: {e}")
@@ -844,14 +931,12 @@ def get_monitor_returns(companies=None):
 
     Rows per kind:
       * "company"  -- one row per selected firm (name, ticker, current price)
-      * "etf"      -- Sprott Lithium Miners ETF (LITP)
-      * "cluster"  -- Nevada Lithium Juniors / Canadian Lithium Juniors /
-                      Australian Producers, equal-weight average
-                      of the members' % returns
+      * "cluster"  -- one equal-weight average row per STOCK_CLUSTERS region
+                      (USA Nevada / Canada / Australia / Lithium Triangle /
+                      Brazil / Africa / Europe) of the members' % returns
 
-    Cards are ordered: selected company(s) first, then Nevada Lithium
-    Juniors, Canadian Lithium Juniors, the Sprott ETF, and finally
-    Australian Producers.
+    Cards are ordered: selected company(s) first, then the region clusters
+    in STOCK_CLUSTERS order.
 
     Returns {"as_of": "YYYY-MM-DD" or None, "rows": [...]}.
     """
@@ -935,23 +1020,6 @@ def get_monitor_returns(companies=None):
             "volume_changes": vol_changes,
         })
 
-    # --- Sprott Lithium Miners ETF -------------------------------------
-    # Kept as a separate row so it can be slotted between the Canadian and
-    # Australian clusters in the final card order below.
-    df = fetch_ticker(LIT_TICKER)
-    if not df.empty:
-        returns, vol_changes, price, last_date, last_volume = calc_returns(df)
-        as_dates.append(last_date)
-        etf_row = {
-            "name": "Sprott Lithium Miners ETF",
-            "ticker": LIT_TICKER,
-            "kind": "etf",
-            "price": price,
-            "volume": last_volume,
-            "returns": returns,
-            "volume_changes": vol_changes,
-        }
-
     # --- clusters (equal-weight average of member returns) -------------
     for _cluster_key, cluster in STOCK_CLUSTERS.items():
         member_rets = {label: [] for label in periods}
@@ -980,7 +1048,7 @@ def get_monitor_returns(companies=None):
         n = max((len(v) for v in member_rets.values()), default=0)
         cluster_rows.append({
             "name": cluster["label"],
-            "ticker": f"avg of {n} members",
+            "ticker": f"Average of {n} companies",
             "kind": "cluster",
             "cluster_key": _cluster_key,
             "price": None,
@@ -990,82 +1058,16 @@ def get_monitor_returns(companies=None):
         })
 
     # --- final card order -------------------------------------------------
-    # Selected company(s) first, then the clusters with the Sprott ETF
-    # slotted in between Canadian Juniors and Australian Producers:
-    #   company -> Nevada -> Canadian -> Sprott ETF -> Australian
+    # Selected company(s) first, then the region clusters in STOCK_CLUSTERS
+    # order (Nevada, Canada, Australia, Lithium Triangle, Brazil, Africa, Europe).
     rows = list(company_rows)
     for row in cluster_rows:
         rows.append(row)
-        if etf_row is not None and row.get("cluster_key") == "Canadian Juniors":
-            rows.append(etf_row)
-    if etf_row is not None and not any(r is etf_row for r in rows):
-        # Fallback: Canadian cluster had no data -> keep the ETF at the end.
-        rows.append(etf_row)
 
     return {
         "as_of": max(as_dates).strftime("%Y-%m-%d") if as_dates else None,
         "rows": rows,
     }
-
-@st.cache_data(ttl=604800)
-def get_correlation_data(companies=None):
-    """Correlation between lithium prices and search interest per company."""
-    if companies is None:
-        companies = list(COMPANIES.keys())
-
-    try:
-        trends = get_google_trends(companies)
-        stock_data = get_stock_data(companies)
-
-        if trends is None or trends.empty or stock_data.empty:
-            return pd.DataFrame(), None
-
-        lit_data = stock_data[stock_data['Ticker'] == LIT_LABEL].copy()
-        if lit_data.empty:
-            return pd.DataFrame(), None
-
-        lit_data['Date'] = pd.to_datetime(lit_data['Date']).dt.tz_localize(None)
-        trends['date'] = pd.to_datetime(trends['date']).dt.tz_localize(None)
-
-        lit_data['Month'] = lit_data['Date'].dt.to_period('M')
-        trends['Month'] = trends['date'].dt.to_period('M')
-
-        lit_monthly = lit_data.groupby('Month')['Close'].mean().reset_index()
-        lit_monthly['Lit_Indexed'] = lit_monthly['Close'] / lit_monthly['Close'].iloc[0] * 100
-
-        # Index each individual search term against LIT, then aggregate to one
-        # Search line per company (mean of the firm's individual terms).
-        trend_cols = company_search_terms(companies)
-        trend_cols_present = [c for c in trend_cols if c in trends.columns]
-        if not trend_cols_present:
-            return pd.DataFrame(), None
-
-        term_to_company = company_term_map(companies)
-        all_search = []
-        for term in trend_cols_present:
-            trends_monthly = trends.groupby('Month')[term].mean().reset_index()
-            merged = pd.merge(lit_monthly[['Month', 'Lit_Indexed']], trends_monthly,
-                              on='Month', how='inner')
-            if merged.empty:
-                continue
-            merged['Search_Indexed'] = merged[term] / merged[term].max() * 100
-            merged['Company'] = term_to_company.get(term, term)
-            all_search.append(merged[['Month', 'Company', 'Search_Indexed']])
-
-        if not all_search:
-            return pd.DataFrame(), None
-
-        result = (
-            pd.concat(all_search, ignore_index=True)
-            .groupby(['Month', 'Company'], as_index=False)['Search_Indexed']
-            .mean()
-        )
-        result = result.merge(lit_monthly[['Month', 'Lit_Indexed']], on='Month', how='left')
-        result['Date'] = result['Month'].dt.to_timestamp()
-        return result, None
-    except Exception as e:
-        return pd.DataFrame(), None
-
 
 @st.cache_data(ttl=604800)
 def get_monthly_search_pattern(companies=None):

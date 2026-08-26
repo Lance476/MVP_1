@@ -122,36 +122,28 @@ with st.container():
 
     is_compare = view_mode == "Compare Companies" and len(selected_companies) >= 2
 
-    # Title
-    company_display = ", ".join([COMPANIES[c]['short_name'] for c in selected_companies])
-    if is_compare:
-        st.title(f"Project Comparison: {company_display}")
-    else:
-        st.title(selected_companies[0])
-
-    st.caption(
-    "MVP/Demo — Data may include errors. Not financial advice.\n\n"
-    "I hope to improve the comparability, Exposure & Ability to monitor Junior Mining Lithium firms.\n"
-    "To simplify this idea, I focus on advanced Lithium projects in Nevada.\n\n"
-    "Upcoming upgrades:\n"
-    "Monitoring Future to measure Interest For the Firm, (Lithium) interest in Nevada, And in Lithium in General.\n\n"
-    "Integrating News Sources, i.e. LinkedIn, X, Company Press Releases, YT Interview.\n\n"
-    "📅 31-08-2026: Version 3 will be deployed (existing link)."
-)
-
     if 'data_source' in st.session_state:
         st.caption(f"Data source: {st.session_state.data_source}")
 
-    # --- SECTIONS ("newsroom" order: live -> search -> events -> reference) ---
+    # --- PITCH TITLE + SECTIONS ("newsroom" order: live -> search -> events -> reference) ---
     # Returning visitors come for what CHANGED (price, catalysts), so the
     # dynamic layers sit above the fold; the static reference library and the
     # feedback ask sit at the bottom, after value has been delivered.
+
+    st.markdown(
+        "<h1 style='text-align:center; font-weight:300; font-size:2.0rem; "
+        "letter-spacing:0.5px; color:#1f2937; margin-bottom:0.25rem;'>"
+        "Discover · Monitor · Compare</h1>"
+        "<p style='text-align:center; font-weight:600; font-size:1.15rem; "
+        "color:#4b5563; margin-top:0; margin-bottom:1.5rem;'>"
+        "Junior Lithium Developers</p>",
+        unsafe_allow_html=True)
 
     # 1. LIVE — price layer: the daily reason to come back
     render_dashboard(selected_companies)
     st.markdown("")
 
-    st.subheader("Stock Performance")
+    st.markdown("")
     render_stock_chart(selected_companies)
     st.markdown("")
 
