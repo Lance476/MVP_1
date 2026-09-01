@@ -241,7 +241,8 @@ def get_cluster_stock_data(period_days=365):
     return cached_fetch(period_days)
 
 
-@st.cache_data(ttl=3600)  # 1h — daily bars barely move intraday
+@st.cache_data(ttl=900)  # 15 min — dagbars bewegen intraday weinig, maar de
+# laatste bar (vandaag) verandert wel; te lange cache toonde gisteren als "1D".
 def get_equity_stock_data(cluster_key):
     """Daily 1-year Close history for every stock in one cluster.
 
@@ -272,6 +273,53 @@ def get_equity_stock_data(cluster_key):
         df = df.sort_values("Date").reset_index(drop=True)
         df["Ticker"] = display
         df["Symbol"] = ticker
+        frames.append(df)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+@st.cache_data(ttl=STOCK_CACHE_TTL_SECONDS[7])  # 15 min — intraday beweegt snel
+def get_equity_intraday_window_data(cluster_key, days):
+    """Close history for every stock in one cluster, over a window.
+
+    For day X the frontend takes the average of the surrounding days (a
+    centered rolling window), so the line is smooth instead of spiky.  This
+    layer just returns raw daily Close prices.
+    """
+    # Daily bars for every window (7D/30D/1Y); one point per trading day.
+    interval = "1d"
+    fetch_period = "1y"
+
+    cluster = STOCK_CLUSTERS.get(cluster_key)
+    if not cluster:
+        return pd.DataFrame()
+
+    frames = []
+    for display, ticker in cluster["members"].items():
+        try:
+            df = yf.Ticker(ticker).history(
+                period=fetch_period, interval=interval).reset_index()
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+            continue
+        if df.empty:
+            continue
+        if "Datetime" in df.columns:
+            df = df.rename(columns={"Datetime": "Date"})
+        df = df[["Date", "Close"]].dropna(subset=["Close"])
+        df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_localize(None)
+        df = df.sort_values("Date").reset_index(drop=True)
+        df["Ticker"] = display
+        df["Symbol"] = ticker
+
+        # Slice to the requested window so the normalised chart starts at the
+        # right point instead of at the beginning of the Yahoo fetch period.
+        cutoff = df["Date"].max() - pd.Timedelta(days=days)
+        df = df[df["Date"] >= cutoff].reset_index(drop=True)
+        if df.empty:
+            continue
         frames.append(df)
 
     if not frames:
@@ -460,129 +508,18 @@ import streamlit as st
 
 from config import COMPANIES
 
-SERPAPI_KEY = st.secrets.get("SERPAPI_KEY", "")
 
 # ============================================================================
 # GOOGLE TRENDS SNAPSHOT (PINNED ~30 DAYS)
 # ============================================================================
-# De Google Trends grafiek (via SerpApi) wordt bewust VASTGEZET voor 30 dagen.
-# De eerste keer dat de app draait (of nadat de snapshot verlopen is) wordt de
-# data via SerpApi opgehaald en weggeschreven naar trends_snapshot.csv +
-# trends_snapshot_meta.json. Die twee bestanden worden in git gecommit, zodat
-# elke Streamlit Cloud deploy exact dezelfde grafiek toont tot de 30 dagen om
-# zijn. Na 30 dagen haalt de app verse data op — commit de twee bestanden dan
-# opnieuw om de nieuwe snapshot vast te zetten.
+# Legacy pinned snapshot (trends_snapshot.csv + trends_snapshot_meta.json).
+# De live trends-graphs draaien tegenwoordig via pytrends (Sentiment.py);
+# dit snapshot wordt alleen nog gelezen door get_google_trends() (o.a. de
+# Comparison Snapshot metrics). Er is geen SerpApi meer nodig.
 # ============================================================================
 TRENDS_SNAPSHOT_FILE = "trends_snapshot.csv"
 TRENDS_SNAPSHOT_META_FILE = "trends_snapshot_meta.json"
 TRENDS_SNAPSHOT_TTL_DAYS = 30
-
-
-def _parse_trends_timestamp(item):
-    """Extract a naive datetime from one SerpApi timeline point."""
-    # Use "timestamp" (epoch) — date strings vary per locale.
-    if item.get("timestamp"):
-        return pd.to_datetime(int(item["timestamp"]), unit="s", utc=True).tz_localize(None)
-
-    date_str = item.get("date", "")
-
-    try:
-        return pd.to_datetime(date_str)
-    except Exception:
-        # Handle week range: "Aug 10 – 16, 2025" → take END date
-        parts = date_str.split("–")
-        end_part = parts[1].strip()
-        start_part = parts[0].strip()
-        month_name = start_part.split()[0]
-        end_clean = end_part.replace(",", "").strip()
-        end_parts = end_clean.split()
-        day = int(end_parts[0])
-        year = int(end_parts[1])
-        month_map = {
-            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
-            'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
-            'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-        }
-        month = month_map.get(month_name[:3], 1)
-        return pd.Timestamp(year=year, month=month, day=day)
-
-
-def fetch_google_trends_serpapi(search_terms):
-    """Fetch Google Trends data via SerpApi for a list of search terms.
-
-    Each term is fetched with its OWN query, so its interest values are
-    normalized 0-100 independently (not relative to the other terms).
-    """
-    if not SERPAPI_KEY or not search_terms:
-        return None
-
-    try:
-        all_data = []
-
-        for term in search_terms:
-            params = {
-                "api_key": SERPAPI_KEY,
-                "engine": "google_trends",
-                "q": term,
-                "data_type": "TIMESERIES",
-                "time_period": "today 5-y",
-            }
-
-            response = requests.get("https://serpapi.com/search", params=params)
-            result = response.json()
-
-            if "interest_over_time" not in result:
-                continue
-
-            timeline = result["interest_over_time"].get("timeline_data", [])
-
-            for item in timeline:
-                date = _parse_trends_timestamp(item)
-
-                values = item.get("values") or []
-                if not values:
-                    continue
-                raw_value = values[0].get("value", values[0].get("extracted_value", 0))
-                try:
-                    value = float(raw_value)
-                except (TypeError, ValueError):
-                    continue
-                all_data.append({"date": date, "term": term, "value": value})
-
-        if not all_data:
-            return None
-
-        df = pd.DataFrame(all_data)
-        pivot = df.pivot_table(index='date', columns='term', values='value',
-                               aggfunc='mean').reset_index()
-        pivot['date'] = pd.to_datetime(pivot['date'])
-
-        for term in search_terms:
-            if term not in pivot.columns:
-                pivot[term] = 0
-
-        # Keep columns in the configured term order
-        ordered_cols = ['date'] + list(search_terms)
-        return pivot[ordered_cols]
-
-    except Exception as e:
-        print(f"Error fetching Google Trends: {e}")
-        return None
-
-
-@st.cache_data(ttl=604800)
-def fetch_single_company_trends(company, search_terms):
-    """Fetch Google Trends for ONE company (cached individually).
-
-    `search_terms` is an explicit argument so the cache key changes whenever
-    the configured terms change (otherwise stale combined-query data could be
-    served for up to a week after a config update).
-    """
-    if SERPAPI_KEY and search_terms:
-        data = fetch_google_trends_serpapi(list(search_terms))
-        if data is not None and not data.empty:
-            return data
-    return None
 
 
 def _trends_snapshot_is_fresh():
@@ -616,16 +553,6 @@ def _load_trends_snapshot():
         return None
 
 
-def _save_trends_snapshot(df):
-    """Persist the trends snapshot + timestamp so it survives future deploys."""
-    try:
-        df.to_csv(TRENDS_SNAPSHOT_FILE, index=False)
-        with open(TRENDS_SNAPSHOT_META_FILE, "w") as f:
-            json.dump({"snapshot_date": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
-    except Exception as e:
-        print(f"trends snapshot write error: {e}")
-
-
 def get_trends_snapshot_info():
     """Return (snapshot_date, expires_date) for the pinned trends graph.
 
@@ -646,43 +573,22 @@ def get_trends_snapshot_info():
 
 
 def get_google_trends(companies=None):
-    """Get Google Trends data, PINNED to a ~30-day snapshot.
+    """Google Trends data uit het vaste snapshot-bestand (legacy).
 
-    The trends graph intentionally freezes for 30 days so it does not change
-    on every code patch/deploy. If a fresh snapshot exists it is returned
-    directly (no SerpApi call). Only after 30 days does the app re-fetch from
-    SerpApi and write a new snapshot (commit the two snapshot files to pin it
-    for another month).
+    SerpApi is volledig verwijderd; de live trends-graphs draaien via
+    pytrends (Sentiment.py). Deze functie leest alleen nog de gepinde
+    trends_snapshot.csv (zolang die 'vers' is) voor o.a. de
+    Comparison Snapshot metrics. Geen netwerkverzoekken meer.
     """
     if companies is None:
         companies = list(COMPANIES.keys())
 
-    # Prefer the pinned snapshot while it is still fresh (< 30 days old)
     if _trends_snapshot_is_fresh():
         snapshot = _load_trends_snapshot()
         if snapshot is not None and not snapshot.empty:
             return snapshot
 
-    all_data = []
-    for company in companies:
-        terms = tuple(COMPANIES[company]['search_terms'])
-        data = fetch_single_company_trends(company, terms)
-        if data is not None and not data.empty:
-            all_data.append(data)
-
-    if not all_data:
-        return None
-
-    combined = all_data[0]
-    for df in all_data[1:]:
-        combined = pd.merge(combined, df, on='date', how='outer')
-
-    combined = combined.sort_values('date').reset_index(drop=True)
-
-    # Pin this freshly fetched data for the next 30 days
-    _save_trends_snapshot(combined)
-
-    return combined
+    return None
 
 
 import numpy as np
@@ -952,6 +858,11 @@ def get_monitor_returns(companies=None):
             cols = [c for c in ["Date", "Close", "Volume"] if c in df.columns]
             df = df[cols]
             if not df.empty:
+                # Yahoo appends a placeholder row for "today" with a NaN Close
+                # on non-trading days (weekends/holidays).  Dropping it keeps
+                # the last row a real trading day — otherwise every return
+                # and the price render as nan%.
+                df = df.dropna(subset=["Close"]).reset_index(drop=True)
                 df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
                 return df.sort_values("Date").reset_index(drop=True)
         except Exception as e:
@@ -960,8 +871,16 @@ def get_monitor_returns(companies=None):
 
     def calc_returns(df):
         """Return (rets, vol_changes, last_price, last_date, last_volume)."""
+        # Use the last row with a real close — never a NaN placeholder bar
+        # (Yahoo emits those on non-trading days like weekends).
+        df = df.dropna(subset=["Close"])
+        if df.empty:
+            return ({label: None for label in periods},
+                    {label: None for label in periods}, None, None, None)
         row = df.iloc[-1]
         current = float(row["Close"])
+        if not pd.notna(current):
+            current = None
         last_date = row["Date"]
         last_volume = None
         has_vol = "Volume" in df.columns and pd.notna(row.get("Volume"))
@@ -1048,7 +967,7 @@ def get_monitor_returns(companies=None):
         n = max((len(v) for v in member_rets.values()), default=0)
         cluster_rows.append({
             "name": cluster["label"],
-            "ticker": f"Average of {n} companies",
+            "ticker": f"Average of {n}",
             "kind": "cluster",
             "cluster_key": _cluster_key,
             "price": None,
@@ -1058,11 +977,22 @@ def get_monitor_returns(companies=None):
         })
 
     # --- final card order -------------------------------------------------
-    # Selected company(s) first, then the region clusters in STOCK_CLUSTERS
-    # order (Nevada, Canada, Australia, Lithium Triangle, Brazil, Africa, Europe).
-    rows = list(company_rows)
-    for row in cluster_rows:
-        rows.append(row)
+    # Selected company(s) first, then the region clusters in a curated order.
+    # Default follows STOCK_CLUSTERS, but Europe is placed before Australia so
+    # the "8 squares" card row reads: USA, Canada, Lithium Triangle, Europe,
+    # Brazil, Africa, Australia.
+    _card_order = [
+        "USA Juniors",
+        "Canada Juniors",
+        "Lithium Triangle Juniors",
+        "Europe Juniors",
+        "Brazil Juniors",
+        "Africa Juniors",
+        "Australia Juniors",
+    ]
+    by_key = {r["cluster_key"]: r for r in cluster_rows}
+    ordered_rows = [by_key[k] for k in _card_order if k in by_key]
+    rows = list(company_rows) + ordered_rows
 
     return {
         "as_of": max(as_dates).strftime("%Y-%m-%d") if as_dates else None,
@@ -1107,48 +1037,6 @@ def get_monthly_search_pattern(companies=None):
         return None
 
     return pd.concat(frames, ignore_index=True)
-
-
-@st.cache_data(ttl=604800)
-def get_search_volume_data(companies=None):
-    """Google Ads search volume (monthly) for the selected companies.
-
-    Returns a long-format DataFrame with columns:
-        Month, Company, Search_Volume
-
-    For every selected company, the company's own line is included plus the
-    two sector benchmarks "lithium stocks" and "Nevada Lithium", so each
-    company's chart shows 3 lines.
-    """
-    from config import SEARCH_DATA
-
-    if companies is None:
-        companies = list(COMPANIES.keys())
-
-    # Benchmarks shown alongside every company's own line
-    benchmark_keys = ["lithium stocks", "Nevada Lithium"]
-
-    rows = []
-    for company in companies:
-        # The company's own series (if present in SEARCH_DATA)
-        series_keys = [company] + benchmark_keys
-        for key in series_keys:
-            data = SEARCH_DATA.get(key)
-            if data is None:
-                continue
-            months = data.get("months", [])
-            values = data.get("values", [])
-            for month, value in zip(months, values):
-                rows.append({
-                    "Month": month,
-                    "Company": key,
-                    "Search_Volume": value,
-                })
-
-    if not rows:
-        return pd.DataFrame(columns=["Month", "Company", "Search_Volume"])
-
-    return pd.DataFrame(rows)
 
 
 import streamlit as st
@@ -1243,89 +1131,157 @@ def track_qa_like():
 
 
 # ============================================================================
-# USER FEEDBACK
+# LITHIUM FUTURES (LIVE SCRAPE — metal.com via Playwright)
+# ============================================================================
+# Futures.py scraped de lithium-futures term structure (CNY-contracten) van
+# metal.com met Playwright (headless Chromium). De Chromium-browser wordt één
+# keer per app-lifetime geïnstalleerd (gecached via st.cache_resource), zodat
+# dit ook op Streamlit Cloud werkt. Fouten leveren een lege lijst op — er is
+# bewust GEEN fallback-afbeelding (zie PROJECT.md voor de install-steps).
 # ============================================================================
 
-import os
-import smtplib
-from email.mime.text import MIMEText
+@st.cache_resource(show_spinner=False)
+def _ensure_playwright_browser():
+    """Zorg dat headless Chromium beschikbaar is voor Playwright.
 
-
-def get_feedback_email():
-    """Return the owner's feedback email address (set FEEDBACK_EMAIL in secrets)."""
-    return st.secrets.get("FEEDBACK_EMAIL", "")
-
-
-def send_feedback(message, contact=""):
-    """Send visitor feedback to the app owner.
-
-    Delivery order (first configured channel wins):
-      1. Formspree web form  — set FORMSPREE_FORM_ID in secrets (works on
-         Streamlit Community Cloud, no SMTP ports needed).
-      2. SMTP email          — set SMTP_HOST, SMTP_PORT, SMTP_USER,
-         SMTP_PASSWORD and FEEDBACK_EMAIL in secrets (e.g. Gmail app password).
-      3. Local fallback      — append to feedback.csv so no feedback is lost
-         while running locally without any channel configured.
-
-    Returns (success: bool, channel: str).
+    Streamlit Cloud voert `playwright install` niet uit tijdens de deploy,
+    dus de browser wordt hier één keer gedownload (gecached voor de
+    app-lifetime). Returns True zodra er een browser te launchen is.
     """
-    message = (message or "").strip()
-    if not message:
-        return False, "empty"
+    import subprocess
+    import sys
 
-    # 1) Formspree
-    form_id = st.secrets.get("FORMSPREE_FORM_ID", "")
-    if form_id:
-        try:
-            resp = requests.post(
-                f"https://formspree.io/f/{form_id}",
-                json={
-                    "message": message,
-                    "contact": contact or "anonymous",
-                    "source": "Lithium Project Comparison",
-                },
-                headers={"Accept": "application/json"},
-                timeout=10,
-            )
-            if resp.ok:
-                return True, "formspree"
-            print(f"Formspree feedback error: {resp.status_code} {resp.text[:200]}")
-        except Exception as e:
-            print(f"Formspree feedback error: {e}")
-
-    # 2) SMTP email
-    smtp_host = st.secrets.get("SMTP_HOST", "")
-    feedback_email = st.secrets.get("FEEDBACK_EMAIL", "")
-    if smtp_host and feedback_email:
-        try:
-            port = int(st.secrets.get("SMTP_PORT", 587))
-            user = st.secrets.get("SMTP_USER", "")
-            password = st.secrets.get("SMTP_PASSWORD", "")
-
-            msg = MIMEText(f"Contact: {contact or 'anonymous'}\n\n{message}")
-            msg["Subject"] = "Feedback — Lithium Project Comparison"
-            msg["From"] = user or feedback_email
-            msg["To"] = feedback_email
-
-            with smtplib.SMTP(smtp_host, port, timeout=15) as server:
-                server.starttls()
-                if user and password:
-                    server.login(user, password)
-                server.sendmail(msg["From"], [feedback_email], msg.as_string())
-            return True, "email"
-        except Exception as e:
-            print(f"SMTP feedback error: {e}")
-
-    # 3) Local fallback
     try:
-        row = pd.DataFrame([{
-            "timestamp": pd.Timestamp.now().isoformat(),
-            "contact": contact or "anonymous",
-            "message": message,
-        }])
-        header = not os.path.exists("feedback.csv")
-        row.to_csv("feedback.csv", mode="a", header=header, index=False)
-        return True, "local"
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("Playwright niet geïnstalleerd — voeg 'playwright' toe aan requirements.txt")
+        return False
+
+    def _can_launch():
+        try:
+            with sync_playwright() as p:
+                p.chromium.launch(headless=True).close()
+            return True
+        except Exception as e:
+            print(f"Playwright chromium launch failed: {e}")
+            return False
+
+    if _can_launch():
+        return True
+
+    # Eenmalige browser-installatie (ook de eerste lokale run)
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True, capture_output=True, timeout=600,
+        )
     except Exception as e:
-        print(f"Local feedback error: {e}")
-        return False, "none"
+        print(f"playwright install chromium failed: {e}")
+        return False
+
+    return _can_launch()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)  # 1 uur — spotprijs beweegt traag
+def get_lithium_spot_history():
+    """Dagelijkse lithium-spotprijs (metalcharts.org via Spot.py) als groeiende
+    tijdserie.  Elke dag wordt maximaal één datapunt toegevoegd aan
+    lithium_spot_data.csv (Date, Price_USD, Change_USD, Change_Percent,
+    Update_Time) — bestaat de rij voor vandaag al, dan wordt hij niet
+    gedupliceerd.  Returns (DataFrame, dict) of (None, None) bij een lege CSV
+    en een mislukte fetch.
+    """
+    import os
+    import re
+    import pandas as pd
+    from Spot import get_lithium_data
+
+    csv_path = os.path.join(os.path.dirname(__file__), "lithium_spot_data.csv")
+    cols = ["Date", "Price_USD", "Change_USD", "Change_Percent", "Update_Time"]
+
+    def _read_csv():
+        if os.path.isfile(csv_path):
+            try:
+                df = pd.read_csv(csv_path)
+                return df[cols].copy()
+            except Exception:
+                pass
+        return pd.DataFrame(columns=cols)
+
+    df = _read_csv()
+
+    # Live fetch; bij succes en nog geen rij voor vandaag → append.
+    data = get_lithium_data()
+    if data and data.get("price") is not None:
+        today = data["scrape_date"]
+        if today not in set(df["Date"]):
+            df = pd.concat([df, pd.DataFrame([{
+                "Date": today,
+                "Price_USD": data["price"],
+                "Change_USD": data["change_usd"],
+                "Change_Percent": data["percent_change"],
+                "Update_Time": data["update_time"],
+            }])], ignore_index=True)
+            try:
+                df.to_csv(csv_path, index=False)
+            except Exception:
+                pass  # read-only FS (Streamlit Cloud): lijn blijft dan sessie-lokaal
+
+    if df.empty:
+        return None, None
+
+    df = df.sort_values("Date").reset_index(drop=True)
+    latest = df.iloc[-1]
+
+    # NaN (lege velden in de CSV) → None, zodat de views er netjes mee omgaan
+    def _clean(v):
+        return None if (v is None or (isinstance(v, float) and v != v)) else v
+
+    # Bron-tijd ("August 29, 2026, 2:00 PM EDT") → kort "14:00 ET",
+    # zelfde format als de futures-caption.
+    raw_time = _clean(latest["Update_Time"])
+    updated_et = None
+    if raw_time:
+        m = re.search(r"(\d{1,2}):(\d{2}) ([AP]M)", str(raw_time))
+        if m:
+            h, mm, ap = int(m.group(1)), m.group(2), m.group(3)
+            h24 = h % 12 + (12 if ap == "PM" else 0)
+            updated_et = f"{h24:02d}:{mm} ET"
+        else:
+            updated_et = str(raw_time)
+
+    return df, {
+        "price": _clean(latest["Price_USD"]),
+        "change_usd": _clean(latest["Change_USD"]),
+        "change_percent": _clean(latest["Change_Percent"]),
+        "date": _clean(latest["Date"]),
+        "update_time": updated_et,
+    }
+
+
+@st.cache_data(ttl=3600, show_spinner=False)  # 1 uur — term structure verandert traag
+def get_lithium_futures():
+    """Lithium futures term structure van metal.com (live scrape).
+
+    Returns een dict:
+        {"contracts": [ {contract, latest, open, high, low}, ... ],
+         "updated":   "HH:MM" in Amerikaans/Oosterse tijd (ET) — tijd van de
+                      laatste geslaagde scrape, geconverteerd naar de NYSE-zone}
+
+    Bij een mislukte scrape: {"contracts": [], "updated": None} (geen fallback).
+    Omdat de hele return gecached zit, blijft `updated` de werkelijke
+    scrape-tijd, ook als de data later uit de cache komt.
+    """
+    if not _ensure_playwright_browser():
+        return {"contracts": [], "updated": None}
+
+    try:
+        from Futures import scrape_lithium
+        contracts = scrape_lithium()
+        return {
+            "contracts": contracts,
+            "updated": pd.Timestamp.now(tz="America/New_York").strftime("%H:%M"),
+        }
+    except Exception as e:
+        print(f"Lithium futures scrape error: {e}")
+        return {"contracts": [], "updated": None}

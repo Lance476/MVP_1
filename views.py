@@ -4,6 +4,7 @@
 # (sidebar, dashboard, studies, timeline, ...) en haalt zijn data via data.py.
 # ============================================================================
 import altair as alt
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import re
@@ -12,23 +13,19 @@ import yfinance as yf
 
 from config import COMPANIES, DEFAULT_COMPANY, STAGE_ORDER, STAGE_SHORT_MAP, STOCK_CLUSTERS, TIMELINE_DATA, YOUTUBE_VIDEOS, lithium_companies
 from data import (
-    company_term_map,
     get_cluster_stock_data,
     get_equity_stock_data,
+    get_equity_intraday_window_data,
     get_intraday_stock_data,
     get_dashboard_metrics,
+    get_lithium_futures,
+    get_lithium_spot_history,
     get_monitor_returns,
-    get_feedback_email,
-    get_google_trends,
     get_market_cap_data,
-    get_monthly_search_pattern,
-    get_search_volume_data,
     get_stock_data,
-    get_trends_snapshot_info,
     build_company_financials,
     load_financial_data,
     load_study_data,
-    send_feedback,
     track_event,
     track_expander_open,
     track_qa_like,
@@ -69,14 +66,114 @@ def render_sidebar():
             if len(selected) < 2:
                 st.warning("Select at least 2 companies.")
 
-        st.markdown("")
-        st.caption("MVP Demo — Not financial advice.")
-
-        st.caption(
-            "📅 00-00-2026: Version 4 will be deployed (existing link) -1. Lithium Spot price, Futures, 2.Ads/Trends Daily 3. Integrate more firms in the 8 Spaces 4.Check how Volume and SP rise is calculated 5. Improve GA4 "
+        # Builder-profiel: subtiel, onderaan — bewijs dat er een echt persoon
+        # achter zit, zonder de focus van de data af te leiden.  Doel-blank
+        # en rel=noreferrer zodat de link overal veilig opent (elk apparaat,
+        # elke browser), zonder referrer-lekkage.
+        st.markdown(
+            "<div style='margin-top:12px; padding-top:10px; "
+            "border-top:1px solid rgba(128,128,128,0.25); "
+            "font-size:12px; color:#6b7280; line-height:1.6;'>"
+            "Built by <b style='color:#374151;'>Lance</b> · "
+            "<a href='https://www.linkedin.com/in/lance39/' target='_blank' "
+            "rel='noopener noreferrer' "
+            "style='color:#1f77b4; text-decoration:none;'>"
+            "&#128279; LinkedIn</a>"
+            "</div>",
+            unsafe_allow_html=True,
         )
 
         return view_mode, selected
+
+
+def render_top_mover_hook(companies=None):
+    """'Hook' bovenaan: één subtiele balk die meteen laat zien dat er iets
+    leeft — de sterkste *individuele* aandelen (1D en 30D) over alle regio's.
+    We zoeken bewust op bedrijfsniveau (niet per regio) zodat de mover
+    specifiek is.  Gebruikt de al-gebruikte, gecachte equity-data per regio —
+    geen extra netwerk.
+    """
+    from data import get_equity_stock_data, STOCK_CLUSTERS  # safe local import
+    if companies is None:
+        companies = list(COMPANIES.keys())
+
+    # ---- Beste individuele mover over alle clusterleden, per periode ----
+    best = {"1d": None, "30d": None}
+    worst = {"1d": None, "30d": None}
+    for _key, cluster in STOCK_CLUSTERS.items():
+        df = get_equity_stock_data(_key)
+        if df is None or df.empty or "Symbol" not in df.columns:
+            continue
+        for sym, g in df.groupby("Symbol"):
+            g = g.sort_values("Date")
+            if len(g) < 2:
+                continue
+            close = g["Close"]
+            last = close.iloc[-1]
+
+            # 1D = laatste bar vs. de ONMIDDELLIJK vorige handelsdag (de rij
+            # er direct vóór).  Dit matcht de dagwijziging van Yahoo.  (Een
+            # "-2 dagen"-versie slaat per ongeluk een handelsdag over en
+            # blies de beweging op, zie do/vr/weekend.)
+            base_1d = close.iloc[-2]
+            if base_1d:
+                ret_1d = (last / base_1d - 1) * 100
+                if best["1d"] is None or ret_1d > best["1d"][1]:
+                    best["1d"] = (str(g["Ticker"].iloc[0]), ret_1d)
+                if worst["1d"] is None or ret_1d < worst["1d"][1]:
+                    worst["1d"] = (str(g["Ticker"].iloc[0]), ret_1d)
+
+            # 30D = laatste bar vs. de dag ~30 dagen terug.
+            tgt = g["Date"].iloc[-1] - pd.Timedelta(days=30)
+            prior = g[g["Date"] <= tgt]
+            if not prior.empty:
+                base_30 = prior["Close"].iloc[-1]
+                if base_30:
+                    ret_30 = (last / base_30 - 1) * 100
+                    if best["30d"] is None or ret_30 > best["30d"][1]:
+                        best["30d"] = (str(g["Ticker"].iloc[0]), ret_30)
+                    if worst["30d"] is None or ret_30 < worst["30d"][1]:
+                        worst["30d"] = (str(g["Ticker"].iloc[0]), ret_30)
+
+    parts = []
+    for label, text in [("1d", "BEST 1D"), ("1d_worst", "WORST 1D"),
+                        ("30d", "BEST 30D"), ("30d_worst", "WORST 30D")]:
+        hit = worst[label.replace("_worst", "")] if label.endswith("_worst") else best[label]
+        if not hit:
+            continue
+        name, v = hit
+        col = "#1a7f37" if v >= 0 else "#d1242f"
+        parts.append(
+            f"<span style='color:#111111;'>{text}</span> "
+            f"<b style='color:#111111;'>{name}</b> "
+            f"<span style='color:{col}; font-weight:700;'>{v:+.1f}%</span>")
+
+    if not parts:
+        return
+
+    st.markdown(
+        "<div style='display:flex; align-items:center; gap:16px; flex-wrap:wrap; "
+        "justify-content:center; padding:10px 14px; border-radius:8px; "
+        "background:#f3f4f6; margin:0 0 18px 0; font-size:13px; "
+        "font-family:\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;'>"
+        + "&nbsp;·&nbsp;".join(parts)
+        + "</div>",
+        unsafe_allow_html=True)
+
+
+def _nice_ceil(x):
+    """Rond een positief getal naar boven af op een 'rond' percentage
+    (1, 2, 2.5, 3, 5, 10 x 10^k) zodat schaallabels netjes lezen (5%, 10%…)."""
+    if x <= 0:
+        return 1.0
+    p = 0
+    while 10 ** p < x:
+        p += 1
+    base = 10.0 ** (p - 1)
+    for nice in (1, 2, 2.5, 3, 5, 10):
+        if x <= nice * base:
+            return nice * base
+    return 10 * base
 
 
 def render_dashboard(companies=None):
@@ -95,14 +192,14 @@ def render_dashboard(companies=None):
         return "#1a7f37" if v >= 0 else "#d1242f"
 
     def _pct(v):
-        if v is None:
+        if v is None or pd.isna(v):
             return "n/a"
         sign = "+" if v >= 0 else ""
         return f"{sign}{v:.1f}%"
 
     def _colored(v):
         """Price return percentage — larger, light weight, professional font."""
-        if v is None:
+        if v is None or pd.isna(v):
             return "<span style='color:#9ca3af; font-size:12px;'>n/a</span>"
         return (f"<span style='font-weight:400; font-size:14px; "
                 f"font-family:\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; "
@@ -111,13 +208,13 @@ def render_dashboard(companies=None):
 
     def _volume_colored(v):
         """Volume change percentage — neutral black, original (inherited) size."""
-        if v is None:
+        if v is None or pd.isna(v):
             return "<span style='color:#9ca3af;'>&#8211;</span>"
         sign = "+" if v >= 0 else ""
         return f"<span style='color:#111111;'>{sign}{v:.1f}%</span>"
 
     def _fmt_volume(v):
-        if v is None:
+        if v is None or pd.isna(v):
             return "n/a"
         if v >= 1e9:
             return f"{v / 1e9:.2f}B"
@@ -162,13 +259,12 @@ def render_dashboard(companies=None):
             return f"{value1} <span style='color:#8a9099; font-size:10px;'>vol {value2}</span>"
 
         row = (
-            _line("1D", _pair(_colored(r["returns"].get("1d")),
-                              _volume_colored(r.get("volume_changes", {}).get("1d"))))
-            + _line("7D", _pair(_colored(r["returns"].get("7d")),
-                                _volume_colored(r.get("volume_changes", {}).get("7d"))))
-            + _line("30D", _pair(_colored(r["returns"].get("30d")),
-                                 _volume_colored(r.get("volume_changes", {}).get("30d"))))
-            + _line("Vol", f"<span style='color:#4b5563;'>{_fmt_volume(r.get('volume'))}</span>")
+            _line("1D", _colored(r["returns"].get("1d")))
+            + _line("7D", _colored(r["returns"].get("7d")))
+            + _line("30D", _colored(r["returns"].get("30d")))
+            # Volume-regel: inhoud (label + getal) leeggemaakt — de rij zelf
+            # blijft bestaan zodat hier later iets anders geplaatst kan worden.
+            + _line("", "")
         )
         return f"""
         <div style='border:1px solid #e5e7eb; border-radius:10px; padding:12px;
@@ -198,16 +294,49 @@ def render_dashboard(companies=None):
 
     def _perf_cell(header, key):
         cluster_rows = [r for r in rows if r.get("kind") == "cluster"]
+        # Rangschikking: eerst alle positieve (groene) rendementen, van hoog
+        # naar laag; daarna de negatieve (rode); ontbrekende waardes onderaan.
         vals = sorted(
             ((r["name"], r["returns"].get(key)) for r in cluster_rows),
-            key=lambda t: (t[1] is None, -(t[1] or 0)),
+            key=lambda t: (
+                t[1] is None,          # None altijd onderaan
+                not (t[1] is not None and t[1] >= 0),  # groen eerst, rood daarna
+                -(t[1] or 0),          # binnen elke groep: hoog -> laag
+            ),
         )
         if not vals:
             st.caption("n/a")
             return
         numeric = [v for _, v in vals if v is not None]
         max_abs = max(abs(v) for v in numeric) if numeric else 1.0
-        st.markdown(f"**{header}**")
+        rng = _nice_ceil(max_abs)
+
+        # Header (1D/7D/30D) op een EIGEN regel, links — zoals origineel.
+        st.markdown(
+            f"<div style='font-weight:700; font-size:14px; color:#111111; "
+            f"margin-bottom:2px;'>{header}</div>",
+            unsafe_allow_html=True)
+
+        # Gedeelde schaal boven de balken: -rng / 0 / +rng, uitgelijnd met de
+        # centrumlijn (negatief links, positief rechts).
+        def _tick_label(x):
+            if x == 0:
+                return "0"
+            return f"{x:g}%"
+
+        st.markdown(
+            f"<div style='display:flex; align-items:center; margin-bottom:14px;'>"
+            f"<span style='width:105px; flex-shrink:0;'></span>"
+            f"<div style='flex:1 1 auto; position:relative; height:16px;'>"
+            f"<span style='position:absolute; left:0; top:0; font-size:14px; "
+            f"color:#9ca3af;'>{_tick_label(-rng)}</span>"
+            f"<span style='position:absolute; left:50%; top:0; transform:translateX(-50%); "
+            f"font-size:14px; color:#9ca3af;'>0</span>"
+            f"<span style='position:absolute; right:0; top:0; font-size:14px; "
+            f"color:#9ca3af;'>{_tick_label(rng)}</span>"
+            f"</div></div>",
+            unsafe_allow_html=True)
+
         for name, v in vals:
             if v is None:
                 st.markdown(
@@ -215,22 +344,24 @@ def render_dashboard(companies=None):
                     f"<span style='color:#9ca3af;'>{name}</span>"
                     f"</div>", unsafe_allow_html=True)
                 continue
-            bar_w = max(3.0, abs(v) / max_abs * 100.0)
+            frac = min(abs(v) / rng, 1.0)      # 0..1
+            bar_w = frac * 50.0                # half of the bar area
+            left = 50.0 if v >= 0 else 50.0 - bar_w
             display_name = name.replace(" Lithium", "")
-            name_style = "font-weight:700;" if display_name == "USA" else ""
-            sign = "+" if v >= 0 else ""
+            # USA markeren met een subtiele accentkleur (niet vet) — dezelfde
+            # blauw als de charts, zodat het opvalt zonder te schreeuwen.
+            name_style = "color:#1f77b4;" if display_name == "USA" else ""
             st.markdown(
                 f"<div style='font-size:12px; padding:4px 0;'>"
                 f"<div style='display:flex; align-items:center;'>"
-                f"<span style='{name_style} width:105px; flex-shrink:0;'>"
+                f"<span style='{name_style} font-weight:400; font-size:14px; width:105px; flex-shrink:0;'>"
                 f"{display_name}</span>"
-                f"<div style='flex:1 1 auto; margin-right:10px;'>"
-                f"<div style='width:{bar_w:.1f}%; height:17px; "
-                f"background:{_color(v)}; border-radius:3px;'>&nbsp;</div></div>"
-                f"<span style='font-weight:400; font-size:13px; "
-                f"color:#111111; flex-shrink:0; width:56px;'>"
-                f"{sign}{v:.1f}%</span>"
-                f"</div></div>",
+                f"<div style='flex:1 1 auto; position:relative; height:17px;'>"
+                f"<div style='position:absolute; left:50%; top:0; bottom:0; width:1px; "
+                f"background:#d1d5db;'></div>"
+                f"<div style='position:absolute; left:{left:.1f}%; width:{bar_w:.1f}%; "
+                f"height:17px; background:{_color(v)}; border-radius:3px;'>&nbsp;</div>"
+                f"</div></div></div>",
                 unsafe_allow_html=True)
 
     left, mid, right = st.columns(3)
@@ -315,70 +446,167 @@ def _render_intraday_chart(members):
         st.info("Geen live data beschikbaar voor deze regio.")
         return
 
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-
     tickers = [m["ticker"] for m in members]
     tz_name, session_open, session_close = _session_window(tickers)
     session_open_n = session_open.tz_localize(None)
     session_close_n = session_close.tz_localize(None)
 
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig = go.Figure()  # Plotly SVG renderer → scherp, nooit wazig
 
     # Shared 5-minute grid from the session open up to the newest real bar.
+    # Only keep bars INSIDE the plotted session: mixed clusters can contain
+    # listings from other exchanges whose newest bar predates this session's
+    # open (e.g. a TSX-V stock seen on the Sydney clock). Such stale bars push
+    # grid_end BEFORE session_open_n, which makes pd.date_range() return an
+    # EMPTY grid and crashes grid[-1] further down with
+    # "IndexError: index -1 is out of bounds for axis 0 with size 0".
     frames = []
+    skipped = []
     for m in members:
         df = m["data"].copy()
         df["Date"] = (
             pd.to_datetime(df["Date"], utc=True)
             .dt.tz_convert(tz_name).dt.tz_localize(None)
         )
+        df = df[df["Date"] >= session_open_n]
+        if df.empty:
+            skipped.append(f"{m['display']} ({m['ticker']})")
+            continue
         frames.append((m, df))
+    if not frames:
+        st.info(
+            "No prices yet — the market is still closed."
+        )
+        return
     grid_end = max(df["Date"].max() for _, df in frames)
     grid = pd.date_range(session_open_n, grid_end, freq="5min")
 
-    handles = []
+    # Draw each stock as a crisp SVG line. A coloured dot marks the newest
+    # 5-minute bar; the firm name + % sits to the right, black and regular
+    # (not bold), so it matches the ranking cards above.
+    ends = []
+    all_prices = []
     for i, (m, df) in enumerate(frames):
         color = _EQUITY_PALETTE[i % len(_EQUITY_PALETTE)]
         s = df.set_index("Date")["Close"]
         s = s.reindex(s.index.union(grid)).sort_index().ffill().reindex(grid)
-        label = f"{m['display']} ({m['ticker']}) · {_currency_label(m['ticker'])}"
-        line, = ax.plot(
-            grid, s.values.astype(float), lw=2, color=color, label=label,
-            solid_capstyle="round")
-        handles.append(line)
-        # Dot marks where this stock currently trades.
-        ax.plot(grid[-1], float(s.values[-1]), "o", ms=6, color=color, zorder=5)
+        ys = s.values.astype(float)
+        fig.add_trace(go.Scatter(
+            x=list(grid), y=ys, mode="lines",
+            line=dict(color=color, width=2.5),
+            hoverinfo="skip", showlegend=False,
+        ))
+        all_prices.extend(y for y in ys if not pd.isna(y))
+        last_val = float(ys[-1])
+        if pd.isna(last_val):
+            continue
+        fig.add_trace(go.Scatter(
+            x=[grid[-1]], y=[last_val], mode="markers",
+            marker=dict(color=color, size=9, line=dict(width=0)),
+            hoverinfo="skip", showlegend=False,
+        ))
+        valid = s.dropna()
+        if len(valid) >= 2 and valid.iloc[0]:
+            pct = (last_val / float(valid.iloc[0]) - 1) * 100
+        else:
+            pct = 0.0
+        ends.append({"x": grid[-1], "y": last_val, "name": m["display"],
+                     "pct": pct})
+
+    if ends and all_prices:
+        # Y-range: a two-line (name + %) label block is ~5.5% of the plotted
+        # height, so consecutive right-hand labels must sit min_gap apart to
+        # avoid printing on top of each other near the session close.
+        ylo = min(all_prices)
+        yhi = max(all_prices)
+        if yhi == ylo:  # single flat line — give the range a little height
+            yhi = ylo + 1.0
+        pad = 0.06 * (yhi - ylo)
+        ylo -= pad
+        yhi += pad
+        min_gap = 0.055 * (yhi - ylo)
+
+        # Highest line first, then push each label down only far enough to
+        # clear the one above it (keeps the movement to a minimum).
+        ends.sort(key=lambda e: e["y"], reverse=True)
+        placed_y = None
+        for e in ends:
+            y = e["y"]
+            if placed_y is not None and placed_y - y < min_gap:
+                y = placed_y - min_gap
+            e["label_y"] = y
+            placed_y = y
+
+        for e in ends:
+            sign = "+" if e["pct"] >= 0 else ""
+            fig.add_annotation(
+                x=e["x"], y=e["label_y"], text=e["name"], textangle=0,
+                xshift=12, yshift=9, showarrow=False,
+                xanchor="left", yanchor="middle",
+                font=dict(color="#111111", size=11),
+            )
+            fig.add_annotation(
+                x=e["x"], y=e["label_y"], text=f"{sign}{e['pct']:.1f}%",
+                textangle=0, xshift=12, yshift=-9, showarrow=False,
+                xanchor="left", yanchor="middle",
+                font=dict(color="#111111", size=11),
+            )
+    else:
+        ylo, yhi = (min(all_prices), max(all_prices)) if all_prices else (0, 1)
+
+    # Tickers whose exchange is closed during this session are not plotted;
+    # say so instead of silently dropping them from the chart.
+    if skipped:
+        st.caption(
+            "Not shown — trades outside this session: "
+            + ", ".join(skipped)
+        )
 
     # Extremely light zone over the remaining session time + dashed 'now' line.
+    # Kept intentionally subtle (low opacity) so the focus stays on the lines
+    # and the black firm labels.
     now_n = pd.Timestamp.now(tz=tz_name).tz_localize(None)
     if session_open_n <= now_n < session_close_n:
-        ax.axvspan(now_n, session_close_n, color="#f7f8fa", alpha=0.9, zorder=0)
-        ax.axvline(now_n, color="#e3e7ec", linestyle="--", lw=1, zorder=1)
+        fig.add_vrect(
+            x0=now_n, x1=session_close_n, fillcolor="#f4f6f8", opacity=0.55,
+            line_width=0, layer="below",
+        )
+        fig.add_vline(
+            x=now_n, line_dash="dot", line_color="#cfd6de", line_width=1,
+            opacity=0.7, layer="below",
+        )
 
-    ax.set_xlim(session_open_n, session_close_n)
-    ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=60))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax.tick_params(axis="x", rotation=0, labelsize=11)
-    ax.tick_params(axis="y", labelsize=12)
-    ax.grid(True, axis="y", alpha=0.25)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.08),
-              ncol=max(1, min(2, len(handles))), frameon=False, fontsize=11)
-    fig.tight_layout()
-    st.pyplot(fig)
+    # Crisp axes, matching the old minimal look: no frame/box, only the light
+    # horizontal grid at quarter alpha, an hourly x-axis and a slight tail on
+    # the right so the final labels have room before the edge.
+    fig.update_xaxes(
+        range=[session_open_n, session_close_n + pd.Timedelta(minutes=12)],
+        tickformat="%H:%M", dtick=3600000,
+        tickfont=dict(size=11), showline=False, zeroline=False,
+        tickcolor="rgba(0,0,0,0)",
+    )
+    fig.update_yaxes(
+        range=[ylo, yhi],
+        tickfont=dict(size=12), showgrid=True, zeroline=False,
+        gridcolor="rgba(0,0,0,0.25)",
+    )
+    fig.update_layout(
+        dragmode=False, hovermode=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=50, r=20, t=20, b=40),
+        height=640,
+        font=dict(family=("Source Sans Pro, Helvetica Neue, Arial, "
+                          "DejaVu Sans, sans-serif")),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def _render_equity_history_chart(period, data):
     """Multi-day chart: every individual stock indexed to 100 at window start."""
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-
     days = {"7D": 7, "30D": 30, "1Y": 366}.get(period, 366)
     cutoff = data["Date"].max() - pd.Timedelta(days=days)
 
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig = go.Figure()  # Plotly SVG renderer → scherp, nooit wazig
     symbols = list(dict.fromkeys(data["Symbol"]))
     n_plotted = 0
     for i, sym in enumerate(symbols):
@@ -387,43 +615,92 @@ def _render_equity_history_chart(period, data):
         if len(g) < 2:
             continue
         norm = g["Close"].values / g["Close"].values[0] * 100.0
+        # Centered moving average over a 6-day window: day X becomes the
+        # mean of the surrounding days.
+        # Using a CENTERED window (rather than a trailing one) is key — it
+        # makes the line smooth by averaging the days around each point,
+        # instead of always dragging behind on past values (which is what
+        # made the line feel spiky / laggy).  min_periods=1 keeps the edges
+        # present (no leading NaNs).
+        norm = np.array(
+            pd.Series(norm, index=pd.DatetimeIndex(g["Date"]))
+            .rolling(window=6, center=True, min_periods=1).mean().values
+        )
+        # The centered window averages the first point with the days AFTER
+        # it, so the leading edge is no longer exactly the starting close.
+        # Pin it back to 100 so the chart always starts on the reference
+        # baseline (start = 100) as intended.
+        norm[0] = 100.0
         color = _EQUITY_PALETTE[n_plotted % len(_EQUITY_PALETTE)]
-        ax.plot(g["Date"], norm, lw=2, color=color,
-                label=(f"{g['Ticker'].iloc[0]} ({sym}) · "
-                       f"{_currency_label(sym)}"))
+        fig.add_trace(go.Scatter(
+            x=list(g["Date"]), y=norm, mode="lines",
+            line=dict(color=color, width=2.5),
+            name=f"{g['Ticker'].iloc[0]} ({sym}) · "
+                 f"{_currency_label(sym)}",
+            hoverinfo="skip",
+        ))
         n_plotted += 1
 
     if n_plotted == 0:
-        plt.close(fig)
         st.info("Geen data beschikbaar voor deze periode.")
         return
 
-    ax.axhline(100, color="#888888", ls="--", lw=1, alpha=0.7)
+    # Baseline at the indexed start (100).
+    fig.add_hline(y=100, line_dash="dash", line_color="#888888",
+                  line_width=1, opacity=0.7)
+
+    # Period-specific x spacing, matching the old matplotlib locators.
     if period == "7D":
-        loc, fmt = mdates.DayLocator(interval=2), "%b %d"
+        tickformat, dtick = "%b %d", "D2"   # every 2 days
     elif period == "30D":
-        loc, fmt = mdates.WeekdayLocator(byweekday=mdates.MO), "%b %d"
+        tickformat, dtick = "%b %d", "W1"   # weekly
     else:
-        loc, fmt = mdates.MonthLocator(interval=2), "%b '%y"
-    ax.xaxis.set_major_locator(loc)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
-    ax.tick_params(axis="x", rotation=0, labelsize=11)
-    ax.tick_params(axis="y", labelsize=12)
-    ax.grid(True, axis="y", alpha=0.25)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2,
-              frameon=False, fontsize=11)
-    fig.tight_layout()
-    st.pyplot(fig)
+        tickformat, dtick = "%b '%y", "M2"  # every 2 months
+
+    fig.update_xaxes(
+        tickformat=tickformat, dtick=dtick,
+        tickfont=dict(size=11), showline=False, zeroline=False,
+        tickcolor="rgba(0,0,0,0)",
+    )
+    fig.update_yaxes(
+        tickfont=dict(size=12), showgrid=True, zeroline=False,
+        gridcolor="rgba(0,0,0,0.25)",
+    )
+    fig.update_layout(
+        dragmode=False, hovermode=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=50, r=20, t=20, b=70),
+        height=640,
+        font=dict(family=("Source Sans Pro, Helvetica Neue, Arial, "
+                          "DejaVu Sans, sans-serif")),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.18,
+                    xanchor="center", x=0.5, font=dict(size=11)),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_equity_returns_table(cluster_key):
-    """Returns table: Stock | Symbol | 1D | 7D | 30D | 1Y per member."""
+def _render_equity_returns_table(cluster_key, period):
+    """Returns table: Stock | Symbol | 1D | 7D | 30D | 1Y per member.
+
+    De 1D-kolom komt (in de 1D-view) uit de live intraday-feed (3 min cache):
+    laatste prijs vandaag vs. slotkoers van de vorige handelsdag — zo staat
+    er dezelfde beweging als op Yahoo.  7D/30D/1Y komen uit de daghistorie.
+    """
     df = get_equity_stock_data(cluster_key)
     if df.empty:
         st.info("Geen dagdata beschikbaar voor de returns-tabel.")
         return
+
+    # Laatste verhandelde prijs per ticker uit de live intraday-feed.
+    live = {}
+    if period == "1D":
+        for m in get_intraday_stock_data().get(cluster_key, []):
+            d = m.get("data")
+            if d is not None and not d.empty:
+                live[m["ticker"]] = (
+                    d["Close"].iloc[-1],
+                    d["Date"].iloc[-1].normalize(),
+                )
 
     def fmt(x):
         if x is None or pd.isna(x):
@@ -447,10 +724,21 @@ def _render_equity_returns_table(cluster_key):
                 return None
             return (close.iloc[-1] / base - 1) * 100
 
+        # 1D: live prijs vs. vorige slotkoers; val terug op dagbars als de
+        # intraday-feed (nog) geen bars heeft (bijv. vóór beursopen).
+        r1d = None
+        if sym in live:
+            last_px, last_day = live[sym]
+            prior = g[g["Date"] < last_day]
+            if not prior.empty and prior["Close"].iloc[-1]:
+                r1d = (last_px / prior["Close"].iloc[-1] - 1) * 100
+        if r1d is None:
+            r1d = ret(2)  # previous trading day (weekend-safe)
+
         rows_out.append({
             "Stock": g["Ticker"].iloc[0],
             "Symbol": sym,
-            "1D": ret(2),      # previous trading day (weekend-safe)
+            "1D": r1d,
             "7D": ret(7),
             "30D": ret(30),
             "1Y": ((close.iloc[-1] / close.iloc[0] - 1) * 100
@@ -472,6 +760,8 @@ def render_stock_chart(companies=None):
     table (Stock | Symbol | 1D | 7D | 30D | 1Y) sits below the chart.
     """
     cluster_keys = list(STOCK_CLUSTERS.keys())
+    # Ruimte tussen de ranking charts hierboven en de bullet-selector
+    st.markdown("<div style='height:36px;'></div>", unsafe_allow_html=True)
     region_key = st.radio(
         "Cluster",
         cluster_keys,
@@ -511,13 +801,101 @@ def render_stock_chart(companies=None):
                 unsafe_allow_html=True)
         _render_intraday_chart(region_rows)
     else:
-        data = get_equity_stock_data(region_key)
+        # 7D / 30D / 1Y: 1-hour bars smoothed with EWMA (span=12), so the line
+        # reflects real intraday movement and reads as a clean trend line.
+        days = {"7D": 7, "30D": 30, "1Y": 365}.get(period, 7)
+        data = get_equity_intraday_window_data(region_key, days)
         if data.empty:
             st.info("Geen data beschikbaar voor deze regio.")
             return
         _render_equity_history_chart(period, data)
 
-    _render_equity_returns_table(region_key)
+    # Returns-tabel standaard ingeklapt om de grafiek niet te overheersen.
+    with st.expander("Returns", expanded=False):
+        track_expander_open("Returns")
+        _render_equity_returns_table(region_key, period)
+
+
+def render_lithium_futures():
+    """Lithium-prij sectie in twee kolommen.
+
+    Linkerkolom  : "Lithium Price" (huidige/verleden prijs — data volgt later).
+    Rechterkolom : "Lithium Futures" — live gescrapede term-structure
+                   (metal.com via Playwright, 1 uur cache).
+    """
+    result = get_lithium_futures()
+    contracts = (result or {}).get("contracts", [])
+    updated = (result or {}).get("updated")
+    if not contracts:
+        st.info("Lithium futures couldn't be loaded.")
+        return
+
+    from Futures import make_chart_plotly
+
+    fig = make_chart_plotly(contracts)
+    if fig is None:
+        st.info("Lithium futures couldn't be loaded.")
+        return
+
+    # Titel per kolom (zelfde opmaak als de "Google Trends"-subheader).
+    col_price, col_futures = st.columns(2)
+
+    with col_price:
+        st.subheader("Lithium Price")
+        df_spot, spot = get_lithium_spot_history()
+        if df_spot is None or spot.get("price") is None:
+            st.info("Lithium price couldn't be loaded.")
+        else:
+            # Prijs + change (groen/rood, zelfde stijl als de futures-change)
+            kleur = "#1a7f37" if (spot["change_usd"] or 0) >= 0 else "#d1242f"
+            pct = spot["change_percent"]
+            chg = spot["change_usd"]
+            # Zelfde format als de futures-regel:
+            # "<prijs> · 1d change +x.x% · <periode>"
+            datum_kort = pd.to_datetime(spot["date"]).strftime("%b %d '%y")
+            st.markdown(
+                f"<p style='font-weight:400; font-size:14px; font-family:\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; letter-spacing:0.3px;'>"
+                f"<b style='color:#374151; font-size:18px;'>${spot['price']:,.2f}</b>"
+                f" &nbsp;·&nbsp; 1d change "
+                f"<span style='color:{kleur};'>"
+                f"{('%+.1f%%' % float(pct)) if pct not in (None, '') else ''}"
+                f"{(' (%+.2f)' % float(chg)) if chg is not None else ''}</span>"
+                f" &nbsp;·&nbsp; <span style='color:#9ca3af;'>{datum_kort}</span></p>",
+                unsafe_allow_html=True,
+            )
+
+    with col_futures:
+        st.subheader("Lithium Futures")
+        from Futures import day_change, contract_to_month
+        change = day_change(contracts)
+        if change is not None:
+            front_month = contract_to_month(contracts[0]["contract"])
+            kleur = "#1a7f37" if change >= 0 else "#d1242f"
+            _diff = contracts[0]["latest"] - contracts[0]["open"]
+            _sign = "+" if _diff >= 0 else "-"
+            st.markdown(
+                f"<p style='font-weight:400; font-size:14px; font-family:\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; letter-spacing:0.3px; margin-top:0;'>"
+                f"<b style='color:#374151; font-size:18px;'>¥{contracts[0]['latest']:,.0f}</b>"
+                f" &nbsp;·&nbsp; 1d change <span style='color:{kleur};'>{change:+.1f}% ({_sign}¥{abs(_diff):,.0f})</span>"
+                f" &nbsp;·&nbsp; <span style='color:#9ca3af;'>{front_month}</span></p>",
+                unsafe_allow_html=True,
+            )
+
+        # 10M outlook boven de grafiek, links uitgelijnd met de prijsregel.
+        from Futures import forward_12m
+        fwd = forward_12m(contracts)
+        if fwd:
+            pct, horizon, _front_lbl, _target_lbl = fwd
+            kleur_fwd = "#1a7f37" if pct >= 0 else "#d1242f"
+            st.markdown(
+                f"<p style='font-weight:400; font-size:14px; font-family:\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; letter-spacing:0.3px;'>"
+                f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{horizon} months change <span style='color:{kleur_fwd};'>{pct:+.1f}%</span></p>",
+                unsafe_allow_html=True,
+            )
+
+        # Plotly rendert als vector → de datums/CNY-waarden zijn net zo
+        # scherp als de HTML-tekst erboven (geen raster zoals matplotlib).
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_comparison_snapshot(companies):
     """A compact 'at-a-glance' summary of the selected companies.
@@ -585,7 +963,7 @@ def render_comparison_snapshot(companies):
         snapshot_df = pd.DataFrame(rows)
         st.dataframe(snapshot_df, use_container_width=True, hide_index=True)
 
-    st.caption("All values are the latest available per company. Some rows may be missing data in this MVP.")
+    st.caption("All values are the latest available per company. Some rows may be missing data.")
 
 
 
@@ -600,6 +978,7 @@ def render_project_studies(companies=None):
 
     if is_compare:
         st.subheader("Project Study Comparison")
+        st.session_state.pop("studies_detail_ratios", None)
         render_study_comparison(companies)
         return
 
@@ -626,7 +1005,7 @@ def render_project_studies(companies=None):
 
             if not ratio_data.empty and not mc_data.empty:
                 merged = pd.merge(
-                    ratio_data[['Stage_Display', 'AfterTax_NPV_M', 'Initial_Capex_M']],
+                    ratio_data[['Stage_Display', 'Date', 'AfterTax_NPV_M', 'Initial_Capex_M']],
                     mc_data[['Stage_Display', 'MarketCap_M', 'Shares_M', 'Stock_Price']],
                     on='Stage_Display', how='inner'
                 ).dropna(subset=['MarketCap_M'])
@@ -639,7 +1018,7 @@ def render_project_studies(companies=None):
 
                     # Melt for compact chart
                     ratio_melted = merged.melt(
-                        id_vars=['Stage_Display'],
+                        id_vars=['Stage_Display', 'Date'],
                         value_vars=['NPV_MarketCap', 'NPV_CAPEX', 'NPV_per_Share'],
                         var_name='Ratio',
                         value_name='Value'
@@ -649,57 +1028,109 @@ def render_project_studies(companies=None):
                         'NPV_CAPEX': 'NPV / CAPEX',
                         'NPV_per_Share': 'NPV / Share'
                     })
-                    ratio_melted['Stage_Short'] = ratio_melted['Stage_Display'].map(STAGE_SHORT_MAP)
-                    stage_order = merged['Stage_Display'].map(STAGE_SHORT_MAP).tolist()
 
-                    # Compact faceted chart — each ratio has its own scale
-                    # Note: `point` overlay is required so companies with only ONE
-                    # study stage (e.g. Surge: only PEA) still show a visible marker
-                    # (a bare line mark with a single point is invisible in Vega-Lite).
-                    chart = alt.Chart(ratio_melted).mark_line(
-                        strokeWidth=2,
-                        color=COMPANIES[company]['color'],
-                        point=alt.OverlayMarkDef(
-                            size=42, filled=True, stroke='white', strokeWidth=1
+                    # Date-based x-axis: exact same time window + year ticks
+                    # as the Milestone Tracker / YT Videos below, so the study
+                    # results line up 1-on-1 with those charts' dates.
+                    x_domain, year_ticks = _milestone_x_domain([company])
+
+                    # Universal y-scale (0 → max) shared by ALL three panels,
+                    # so the ratio values are directly comparable and the axis
+                    # numbers on the right are identical for every panel.
+                    y_max = float(ratio_melted['Value'].max()) if not ratio_melted.empty else 1.0
+                    y_domain = [0, y_max * 1.08]
+
+                    # Faceted chart on a shared date axis — each ratio has its
+                    # own y-scale. `point` overlay is required so companies with
+                    # only ONE study stage still show a visible marker.
+                    # Build as 3 stacked panels (vconcat) with the ratio name as
+                    # a rotated y-axis title: that keeps the plot area as wide
+                    # as the YT Videos / Milestone Tracker charts below (a row
+                    # facet would reserve ~100px for left header labels).
+                    # Explicit same x-domain + ticks on every panel so the dates
+                    # line up 1-on-1 across panels AND with the charts below.
+                    def _ratio_panel(ratio_label, show_x_labels=True):
+                        x_axis_kwargs = dict(format='%b %Y',
+                                             grid=True,
+                                             gridColor='#ECECEC',
+                                             gridDash=[3, 3],
+                                             values=year_ticks,
+                                             labelFontSize=12)
+                        if not show_x_labels:
+                            # Top panels: hide date labels (shown once at the
+                            # bottom panel) but keep the identical axis/ticks
+                            # so all panels stay aligned with each other and
+                            # with the charts below.
+                            x_axis_kwargs.update(labels=False, ticks=False, grid=False)
+                        return alt.Chart(
+                            ratio_melted[ratio_melted['Ratio'] == ratio_label]
+                        ).mark_line(
+                            strokeWidth=2,
+                            color=COMPANIES[company]['color'],
+                            point=alt.OverlayMarkDef(
+                                size=42, filled=True, stroke='white', strokeWidth=1
+                            )
+                        ).encode(
+                            x=alt.X('Date:T',
+                                    title=None,
+                                    axis=alt.Axis(**x_axis_kwargs),
+                                    scale=alt.Scale(zero=False, domain=x_domain)
+                                    if x_domain else alt.Scale(zero=False)),
+                            y=alt.Y('Value:Q',
+                                    title=None,
+                                    scale=alt.Scale(zero=True, domain=y_domain),
+                                    axis=alt.Axis(labelFontSize=11,
+                                                  format='.1f',
+                                                  grid=True,
+                                                  gridColor='#ECECEC',
+                                                  gridDash=[3, 3],
+                                                  orient='right')),
+                            tooltip=[
+                                alt.Tooltip('Stage_Display:N', title='Study'),
+                                alt.Tooltip('Date:T', title='Date', format='%Y-%m-%d'),
+                                alt.Tooltip('Value:Q', title='Value', format='.2f')
+                            ]
+                        ).properties(
+                            height=96,
+                            # Ratio name as a horizontal, right-aligned title
+                            # ABOVE the panel: readable without tilting your
+                            # head and no overlap with the axis numbers.
+                            title=alt.TitleParams(
+                                ratio_label,
+                                anchor='end',
+                                fontSize=13,
+                                fontWeight='bold',
+                                dy=-4,
+                            )
                         )
-                    ).encode(
-                        x=alt.X('Stage_Short:N',
-                               title=None,
-                               sort=stage_order,
-                               axis=alt.Axis(labelFontSize=10, labelFontWeight='bold', titlePadding=8)),
-                        y=alt.Y('Value:Q',
-                               title=None,
-                               scale=alt.Scale(zero=False),
-                               axis=alt.Axis(labelFontSize=9)),
-                        tooltip=[
-                            alt.Tooltip('Stage_Display:N', title='Study'),
-                            alt.Tooltip('Value:Q', title='Value', format='.2f')
-                        ]
-                    ).properties(height=110, width=200).facet(
-                        row=alt.Row('Ratio:N', title=None,
-                                   header=alt.Header(labelFontSize=10, labelAngle=0, labelAlign='left'))
-                    )
 
-                    # Half width like the Search Interest columns
-                    col_chart, _ = st.columns([1, 1])
-                    with col_chart:
-                        st.altair_chart(chart, use_container_width=True)
-                        st.caption("Values C$")
+                    chart = alt.vconcat(
+                        _ratio_panel('NPV / Mkt Cap', show_x_labels=False),
+                        _ratio_panel('NPV / CAPEX', show_x_labels=False),
+                        _ratio_panel('NPV / Share'),
+                        spacing=6,
+                    ).configure_view(stroke=None)
 
-                    # Compact table — 2 decimals everywhere
-                    with st.expander("View detailed data table", expanded=False):
-                        track_expander_open("View detailed data table")
-                        display_ratios = merged[['Stage_Display', 'AfterTax_NPV_M', 'Initial_Capex_M',
-                                             'MarketCap_M', 'NPV_MarketCap', 'NPV_CAPEX', 'NPV_per_Share',
-                                             'Stock_Price']].copy()
-                        display_ratios.columns = ['Study', 'NPV ($M)', 'CAPEX ($M)', 'Mkt Cap ($M)',
-                                              'NPV/MktCap (×)', 'NPV/CAPEX (×)', 'NPV/Share ($)', 'Stock Price ($)']
-                        for col in display_ratios.columns:
-                            if col != 'Study':
-                                display_ratios[col] = display_ratios[col].apply(
-                                    lambda x: round(x, 2) if pd.notna(x) else x
-                                )
-                        st.dataframe(display_ratios, use_container_width=True, hide_index=True)
+                    # Full width, so the dates align exactly with the
+                    # Milestone Tracker and YT Videos charts below
+                    st.altair_chart(chart, use_container_width=True)
+                    st.caption("Values C$")
+
+                    # Compact table — 2 decimals everywhere.
+                    # The expander itself is rendered later (just above
+                    # Management Due Diligence, after Quarterly Cash) via
+                    # render_data_expanders(); here we only prepare + store it.
+                    display_ratios = merged[['Stage_Display', 'AfterTax_NPV_M', 'Initial_Capex_M',
+                                         'MarketCap_M', 'NPV_MarketCap', 'NPV_CAPEX', 'NPV_per_Share',
+                                         'Stock_Price']].copy()
+                    display_ratios.columns = ['Study', 'NPV ($M)', 'CAPEX ($M)', 'Mkt Cap ($M)',
+                                          'NPV/MktCap (×)', 'NPV/CAPEX (×)', 'NPV/Share ($)', 'Stock Price ($)']
+                    for col in display_ratios.columns:
+                        if col != 'Study':
+                            display_ratios[col] = display_ratios[col].apply(
+                                lambda x: round(x, 2) if pd.notna(x) else x
+                            )
+                    st.session_state["studies_detail_ratios"] = (company, display_ratios)
                 else:
                     st.info("No market cap data available for studies.")
         with tab2:
@@ -1006,7 +1437,7 @@ def render_study_comparison(companies):
     mc_data = get_market_cap_data(companies)
     if not mc_data.empty:
         value_compare = pd.merge(
-            all_studies[['Company', 'Stage_Display', 'AfterTax_NPV_M', 'Initial_Capex_M']],
+            all_studies[['Company', 'Stage_Display', 'Date', 'AfterTax_NPV_M', 'Initial_Capex_M']],
             mc_data[['Company', 'Stage_Display', 'MarketCap_M', 'Shares_M']],
             on=['Company', 'Stage_Display'], how='inner'
         ).dropna(subset=['AfterTax_NPV_M', 'MarketCap_M'])
@@ -1020,37 +1451,77 @@ def render_study_comparison(companies):
             value_compare['NPV/Share'] = value_compare['AfterTax_NPV_M'] / value_compare['Shares_M']
             value_compare['Stage_Short'] = value_compare['Stage_Display'].map(STAGE_SHORT_MAP)
 
-            ratio_cols = st.columns(3)
-            for col, ratio in zip(ratio_cols, ['NPV/Mkt Cap', 'NPV/CAPEX', 'NPV/Share']):
-                with col:
-                    st.markdown(f"**{ratio}**")
-                    sub = value_compare[['Company', 'Stage_Short', ratio]].dropna(subset=[ratio])
-                    if not sub.empty:
-                        chart = alt.Chart(sub).mark_line(
-                            point=alt.OverlayMarkDef(size=25, filled=True, stroke='white', strokeWidth=1),
-                            strokeWidth=2
-                        ).encode(
-                            x=alt.X('Stage_Short:N',
-                                    title=None,
-                                    sort=STAGE_ORDER,
-                                    axis=alt.Axis(labelFontSize=9, labelFontWeight='bold', titlePadding=8)),
-                            y=alt.Y(f'{ratio}:Q',
-                                    title=None,
-                                    scale=alt.Scale(zero=False),
-                                    axis=alt.Axis(labelFontSize=8)),
-                            color=alt.Color('Company:N',
-                                            scale=alt.Scale(domain=list(color_scale.keys()),
-                                                            range=list(color_scale.values())),
-                                            legend=alt.Legend(orient="bottom", title=None, labelFontSize=9)),
-                            tooltip=[
-                                alt.Tooltip('Company:N', title='Company'),
-                                alt.Tooltip('Stage_Short:N', title='Study'),
-                                alt.Tooltip(f'{ratio}:Q', title=ratio, format='.2f')
-                            ]
-                        ).properties(height=220)
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.caption("No data available")
+            # Long format + shared time window & universal y-scale, so the
+            # compare panels use exactly the same date axis and 0→max scale
+            # as the single-company Value Ratios chart.
+            ratio_melted_c = value_compare.melt(
+                id_vars=['Company', 'Date'],
+                value_vars=['NPV/Mkt Cap', 'NPV/CAPEX', 'NPV/Share'],
+                var_name='Ratio',
+                value_name='Value'
+            ).dropna(subset=['Value'])
+
+            x_domain_c, year_ticks_c = _milestone_x_domain(companies)
+            y_max_c = float(ratio_melted_c['Value'].max()) if not ratio_melted_c.empty else 1.0
+            y_domain_c = [0, y_max_c * 1.08]
+
+            def _compare_panel(ratio_label, show_x_labels=True, show_legend=True):
+                x_axis_kwargs = dict(format='%b %Y',
+                                     grid=True,
+                                     gridColor='#ECECEC',
+                                     gridDash=[3, 3],
+                                     values=year_ticks_c,
+                                     labelFontSize=12)
+                if not show_x_labels:
+                    x_axis_kwargs.update(labels=False, ticks=False, grid=False)
+                return alt.Chart(
+                    ratio_melted_c[ratio_melted_c['Ratio'] == ratio_label]
+                ).mark_line(
+                    strokeWidth=2,
+                    point=alt.OverlayMarkDef(size=30, filled=True, stroke='white', strokeWidth=1)
+                ).encode(
+                    x=alt.X('Date:T',
+                            title=None,
+                            axis=alt.Axis(**x_axis_kwargs),
+                            scale=alt.Scale(zero=False, domain=x_domain_c)
+                            if x_domain_c else alt.Scale(zero=False)),
+                    y=alt.Y('Value:Q',
+                            title=None,
+                            scale=alt.Scale(zero=True, domain=y_domain_c),
+                            axis=alt.Axis(labelFontSize=11,
+                                          format='.1f',
+                                          grid=True,
+                                          gridColor='#ECECEC',
+                                          gridDash=[3, 3],
+                                          orient='right')),
+                    color=alt.Color('Company:N',
+                                    scale=alt.Scale(domain=list(color_scale.keys()),
+                                                    range=list(color_scale.values())),
+                                    legend=alt.Legend(orient='bottom', title=None, labelFontSize=10)
+                                    if show_legend else None),
+                    tooltip=[
+                        alt.Tooltip('Company:N', title='Company'),
+                        alt.Tooltip('Date:T', title='Date', format='%Y-%m-%d'),
+                        alt.Tooltip('Value:Q', title=ratio_label, format='.2f')
+                    ],
+                ).properties(
+                    height=96,
+                    title=alt.TitleParams(
+                        ratio_label,
+                        anchor='end',
+                                fontSize=13,
+                        fontWeight='bold',
+                        dy=-4,
+                    )
+                )
+
+            chart_c = alt.vconcat(
+                _compare_panel('NPV/Mkt Cap', show_x_labels=False, show_legend=False),
+                _compare_panel('NPV/CAPEX', show_x_labels=False, show_legend=False),
+                _compare_panel('NPV/Share'),
+                spacing=6,
+            ).configure_view(stroke=None)
+            st.altair_chart(chart_c, use_container_width=True)
         else:
             st.info("No market cap data available for the selected companies.")
     else:
@@ -1107,7 +1578,7 @@ def render_study_comparison(companies):
                 else:
                     st.caption("No data available")
 
-    st.caption("Only companies with study data are shown. Data for non-Century companies is placeholder/MVP.")
+    st.caption("Only companies with study data are shown. Data for additional companies is added continuously.")
 
 
 
@@ -1197,7 +1668,7 @@ def render_key_insights(companies=None):
             if pd.notna(latest['Net_Operating_Cost_t']) and latest['Net_Operating_Cost_t'] < 0:
                 st.caption("Negative operating cost reflects byproduct credits.")
 
-        st.caption("Source: Company technical reports and studies (MVP Demo Data)")
+        st.caption("Source: Company technical reports and studies (public filings)")
     else:
         st.info("No study data available")
 
@@ -1205,184 +1676,46 @@ def render_key_insights(companies=None):
 
 
 
-def render_monthly_pattern(companies=None):
-    """Compact bar chart of average monthly search interest (grouped)."""
-    if companies is None:
-        companies = list(COMPANIES.keys())
-
-    monthly = get_monthly_search_pattern(companies)
-    if monthly is None or monthly.empty:
-        return
-
-    # Map search terms back to company display names
-    term_to_company = company_term_map(companies)
-    monthly['Company'] = monthly['Term'].map(term_to_company).fillna(monthly['Term'])
-
-    # Average across the firm's individual search terms so each company has
-    # one bar per month
-    monthly = (
-        monthly.groupby(['Company', 'Month', 'Month_Name'], as_index=False)['Interest']
-        .mean()
-        .sort_values('Month')
+def render_search_analysis(companies=None):
+    """Google Trends section: drie trends-graphs naast elkaar (links naar
+    rechts), één per zoekterm uit Sentiment.py. Boven elke graph staat de
+    zoekterm als label (zelfde format als het 'Google Trends' label,
+    met eigen lettertype en grootte)."""
+    from Sentiment import (
+        ZOEKTERMEN, LABEL_STYLE, fetch_trends_data, build_trends_figure,
+        get_7d_change,
     )
 
-    # Color scale for companies
-    color_scale = {c: COMPANIES[c]['color'] for c in companies}
+    cols = st.columns(len(ZOEKTERMEN))
 
-    chart = alt.Chart(monthly).mark_bar(
-        size=14,
-        cornerRadiusTopLeft=3,
-        cornerRadiusTopRight=3
-    ).encode(
-        x=alt.X('Month_Name:N',
-                sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                title=None,
-                axis=alt.Axis(labelAngle=0, labelFontSize=10, title=None)),
-        y=alt.Y('Interest:Q',
-                title='Avg Interest (0-100)',
-                scale=alt.Scale(domain=[0, 100])),
-        color=alt.Color('Company:N',
-                        scale=alt.Scale(domain=list(color_scale.keys()),
-                                        range=list(color_scale.values())),
-                        legend=alt.Legend(orient="top", title=None, labelFontSize=10)),
-        tooltip=[
-            alt.Tooltip('Company:N', title='Company'),
-            alt.Tooltip('Month_Name:N', title='Month'),
-            alt.Tooltip('Interest:Q', title='Avg Interest', format='.1f')
-        ]
-    ).properties(height=160)
+    for col, term in zip(cols, ZOEKTERMEN):
+        with col:
+            # Zoekterm als label boven de graph (lettertype + grootte vastgelegd in LABEL_STYLE)
+            st.markdown(
+                f"<p style='{LABEL_STYLE} margin-bottom:0.25rem;'>\"{term}\"</p>",
+                unsafe_allow_html=True,
+            )
 
-    st.altair_chart(chart, use_container_width=True)
+            data = fetch_trends_data(term)
+            if data is None:
+                st.info("Google Trends data temporarily unavailable (rate limited) — try again in a minute.")
+                continue
 
+            fig = build_trends_figure(term, data)
+            # Plotly rendert als vector → haarscherp, net als de rest van de app.
+            st.plotly_chart(fig, use_container_width=True)
 
-def render_search_analysis(companies=None):
-    """Clean search section with comparison support."""
-    if companies is None:
-        companies = list(COMPANIES.keys())
-
-    # ------------------------------------------------------------------
-    # Two charts side by side:
-    #   Left:  Interest vs Market Performance (per company)
-    #   Right: Google Ads Search Volume (company + Nevada Lithium + lithium stocks)
-    # ------------------------------------------------------------------
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("**Google Trends**")
-
-        # Build the per-company search-interest series from the pinned
-        # Google Trends snapshot (same shape as before: Date / Company /
-        # Search_Indexed).
-        corr_data = None
-        trends = get_google_trends(companies)
-        if trends is not None and not trends.empty:
-            term_map = company_term_map(companies)
-            frames = []
-            for term, comp in term_map.items():
-                if comp in companies and term in trends.columns:
-                    g = trends[["date", term]].dropna().rename(
-                        columns={"date": "Date", term: "Search_Indexed"}
-                    )
-                    g["Company"] = comp
-                    frames.append(g)
-            if frames:
-                corr_data = (
-                    pd.concat(frames, ignore_index=True)
-                    .sort_values("Date")
+            # 7d change onder de graph (groen bij stijging, rood bij daling)
+            change = get_7d_change(term)
+            if change is not None:
+                kleur = "#1a7f37" if change >= 0 else "#d1242f"
+                st.markdown(
+                    f"<p style='font-weight:400; font-size:14px; font-family:\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; letter-spacing:0.3px; color:{kleur}; margin-top:0;'>"
+                    f"7d change: {change:+.1f}%</p>",
+                    unsafe_allow_html=True,
                 )
-
-        # Show when the pinned trends snapshot was taken and when it refreshes.
-        # The Google Trends graph (SerpApi) is intentionally frozen for ~30 days
-        # so it does not change on every code patch/deploy.
-        snapshot_date, expires_date = get_trends_snapshot_info()
-        if snapshot_date is not None and expires_date is not None:
-            st.caption(
-                f"🔒 Graph fixed since {snapshot_date.strftime('%d %b %Y')} — "
-                f"refreshes on {expires_date.strftime('%d %b %Y')}"
-            )
-
-        if corr_data is not None and not corr_data.empty:
-            color_scale = {c: COMPANIES[c]['color'] for c in companies}
-
-            # Melt for proper legend (corr_data already carries Company)
-            df_melted = corr_data.melt(
-                id_vars=['Date', 'Company'],
-                value_vars=['Search_Indexed'],
-                var_name='Series',
-                value_name='Value'
-            )
-
-            # Clean labels
-            df_melted['Series'] = df_melted['Series'].map({
-                'Search_Indexed': 'Search'
-            })
-
-            chart = alt.Chart(df_melted).mark_line(
-                strokeWidth=2
-            ).encode(
-                x=alt.X('Date:T', axis=alt.Axis(format="%Y", tickCount="year", title="Year")),
-                y=alt.Y('Value:Q', title='', scale=alt.Scale(zero=False)),
-                color=alt.Color(
-                    'Company:N',
-                    scale=alt.Scale(domain=list(color_scale.keys()),
-                                    range=list(color_scale.values())),
-                    title=None,
-                    legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
-                ),
-                tooltip=[
-                    alt.Tooltip('Company:N', title='Company'),
-                    alt.Tooltip('Date:T', title='Date', format='%Y-%m-%d'),
-                    alt.Tooltip('Value:Q', title='Search Interest', format='.1f')
-                ]
-            ).properties(height=250)
-
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("No data available")
-
-    with col2:
-        st.markdown("**Google Ads Search Volume**")
-        sv_data = get_search_volume_data(companies)
-
-        if sv_data is not None and not sv_data.empty:
-            # Color scale: company color for the firm's own line, fixed colors
-            # for the two benchmarks.
-            color_scale = {c: COMPANIES[c]['color'] for c in companies}
-            color_scale["lithium stocks"] = "#95A5A6"
-            color_scale["Nevada Lithium"] = "#E74C3C"
-
-            # Chronological month order (the labels are strings like "8/2025",
-            # which would otherwise sort alphabetically).
-            month_order = [
-                "8/2025", "9/2025", "10/2025", "11/2025", "12/2025",
-                "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026",
-            ]
-
-            sv_chart = alt.Chart(sv_data).mark_line(
-                strokeWidth=2
-            ).encode(
-                x=alt.X('Month:N', title=None, sort=month_order,
-                        axis=alt.Axis(labelAngle=-45, labelFontSize=9)),
-                y=alt.Y('Search_Volume:Q', title='Search Volume',
-                        scale=alt.Scale(zero=False)),
-                color=alt.Color(
-                    'Company:N',
-                    scale=alt.Scale(domain=list(color_scale.keys()),
-                                    range=list(color_scale.values())),
-                    title=None,
-                    legend=alt.Legend(orient="right", labelFontSize=10, columns=1)
-                ),
-                tooltip=[
-                    alt.Tooltip('Company:N', title='Series'),
-                    alt.Tooltip('Month:N', title='Month'),
-                    alt.Tooltip('Search_Volume:Q', title='Search Volume', format=',.0f')
-                ]
-            ).properties(height=250)
-
-            st.altair_chart(sv_chart, use_container_width=True)
-        else:
-            st.info("No search volume data available")
+            else:
+                st.caption("7d change: Niet genoeg data")
 
 
 def render_qa_section():
@@ -1915,6 +2248,110 @@ def render_financial_comparison(companies, annual, stock):
 
 
 
+def _parse_timeline_date(date_str):
+    """Parse timeline date strings into datetime objects.
+
+    Shared by the Milestone Tracker and the Interview Timeline so that
+    both charts use exactly the same time window.
+    """
+    if date_str is None or date_str == '—' or date_str == '':
+        return None
+
+    s = str(date_str).strip()
+
+    # DD-MM-YYYY format
+    try:
+        parts = s.split('-')
+        if len(parts) == 3 and all(p.isdigit() for p in parts):
+            return pd.to_datetime(f"{parts[2]}-{parts[1]}-{parts[0]}")
+    except Exception:
+        pass
+
+    s_lower = s.lower()
+
+    # 'Ongoing' → today, so in-progress activities are placed at the current date
+    if 'ongoing' in s_lower:
+        return pd.Timestamp.today()
+
+    # Bare '<Year>' (exactly 4 digits) → end of year
+    if re.fullmatch(r'\d{4}', s):
+        return pd.to_datetime(f"{s}-12-31")
+
+    # Standard datetime parse
+    try:
+        return pd.to_datetime(s)
+    except Exception:
+        pass
+
+    # Half-year references: 'H1 2026' → end of H1, 'H2 2026' → end of H2
+    h_map = {'h1': (6, 30), 'h2': (12, 31)}
+    for h, (month, day) in h_map.items():
+        if h in s_lower:
+            m = re.search(r'(\d{4})', s)
+            if m:
+                return pd.to_datetime(f"{m.group(1)}-{month:02d}-{day}")
+
+    # Quarter references: 'Q1 2019' → end of quarter
+    q_map = {'q1': (3, 31), 'q2': (6, 30), 'q3': (9, 30), 'q4': (12, 31)}
+    for q, (month, day) in q_map.items():
+        if q in s_lower:
+            m = re.search(r'(\d{4})', s)
+            if m:
+                return pd.to_datetime(f"{m.group(1)}-{month:02d}-{day}")
+
+    # Month references ('Late <Month> <Year>', '<Month> <Year>') → end of month
+    month_map = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
+        'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    }
+    for name, num in month_map.items():
+        if name in s_lower:
+            m = re.search(r'(\d{4})', s)
+            if m:
+                return pd.to_datetime(f"{m.group(1)}-{num:02d}-28")
+
+    # Bare '<Year>' → end of year
+    m = re.search(r'(\d{4})', s)
+    if m:
+        return pd.to_datetime(f"{m.group(1)}-12-31")
+
+    return None
+
+
+def _year_axis_ticks(start, end, step=2):
+    """Shared x-axis ticks: Jan 1st of every `step` years.
+
+    Used by both the Milestone Tracker and the Interview Timeline so the
+    date labels sit at exactly the same horizontal position on both charts.
+    """
+    first_year = start.year if start.month == 1 and start.day == 1 else start.year + 1
+    years = range(first_year, end.year + 1, step)
+    return [pd.Timestamp(year=y, month=1, day=1) for y in years]
+
+def _milestone_x_domain(companies):
+    """Shared x-domain + year ticks derived from the Milestone Tracker dates.
+
+    Used by the Milestone Tracker's siblings (YT Videos, Value Ratios) so all
+    date-based charts sit on exactly the same horizontal time window.
+    """
+    milestone_dates = []
+    for company in companies:
+        for row in TIMELINE_DATA.get(company, []):
+            for key in ('Commitment date', 'Expected date', 'Actual date'):
+                parsed = _parse_timeline_date(row.get(key))
+                if parsed is not None:
+                    milestone_dates.append(parsed)
+    if not milestone_dates:
+        return None, None
+    m_min, m_max = pd.Series(milestone_dates).min(), pd.Series(milestone_dates).max()
+    pad = (m_max - m_min) * 0.08
+    right_pad = (m_max - m_min) * 0.25
+    x_domain = [(m_min - pad).to_pydatetime(), (m_max + pad + right_pad).to_pydatetime()]
+    return x_domain, _year_axis_ticks(x_domain[0], x_domain[1])
+
+
 def render_timeline(companies=None):
     """Render the press release / study timeline (single or comparison)."""
     if companies is None:
@@ -1923,9 +2360,9 @@ def render_timeline(companies=None):
     is_compare = len(companies) > 1
 
     if is_compare:
-        st.subheader("Study Timeline — Comparison")
+        st.subheader("Milestone Tracker — Comparison")
     else:
-        st.subheader("Press Release Timeline & Expectations")
+        st.subheader("Milestone Tracker")
 
     # Combine timeline data for the selected companies
     all_rows = []
@@ -1945,72 +2382,7 @@ def render_timeline(companies=None):
     # ------------------------------------------------------------------
     # Build long-format event data for the chart
     # ------------------------------------------------------------------
-    def parse_timeline_date(date_str):
-        """Parse timeline date strings into datetime objects."""
-        if date_str is None or date_str == '—' or date_str == '':
-            return None
-
-        s = str(date_str).strip()
-
-        # DD-MM-YYYY format
-        try:
-            parts = s.split('-')
-            if len(parts) == 3 and all(p.isdigit() for p in parts):
-                return pd.to_datetime(f"{parts[2]}-{parts[1]}-{parts[0]}")
-        except Exception:
-            pass
-
-        s_lower = s.lower()
-
-        # 'Ongoing' → today, so in-progress activities are placed at the current date
-        if 'ongoing' in s_lower:
-            return pd.Timestamp.today()
-
-        # Bare '<Year>' (exactly 4 digits) → end of year
-        if re.fullmatch(r'\d{4}', s):
-            return pd.to_datetime(f"{s}-12-31")
-
-        # Standard datetime parse
-        try:
-            return pd.to_datetime(s)
-        except Exception:
-            pass
-
-        # Half-year references: 'H1 2026' → end of H1, 'H2 2026' → end of H2
-        h_map = {'h1': (6, 30), 'h2': (12, 31)}
-        for h, (month, day) in h_map.items():
-            if h in s_lower:
-                m = re.search(r'(\d{4})', s)
-                if m:
-                    return pd.to_datetime(f"{m.group(1)}-{month:02d}-{day}")
-
-        # Quarter references: 'Q1 2019' → end of quarter
-        q_map = {'q1': (3, 31), 'q2': (6, 30), 'q3': (9, 30), 'q4': (12, 31)}
-        for q, (month, day) in q_map.items():
-            if q in s_lower:
-                m = re.search(r'(\d{4})', s)
-                if m:
-                    return pd.to_datetime(f"{m.group(1)}-{month:02d}-{day}")
-
-        # Month references ('Late <Month> <Year>', '<Month> <Year>') → end of month
-        month_map = {
-            'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-            'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
-            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6,
-            'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
-        }
-        for name, num in month_map.items():
-            if name in s_lower:
-                m = re.search(r'(\d{4})', s)
-                if m:
-                    return pd.to_datetime(f"{m.group(1)}-{num:02d}-28")
-
-        # Bare '<Year>' → end of year
-        m = re.search(r'(\d{4})', s)
-        if m:
-            return pd.to_datetime(f"{m.group(1)}-12-31")
-
-        return None
+    parse_timeline_date = _parse_timeline_date
 
     event_mappings = {
         'Commitment date': 'Commitment',
@@ -2041,6 +2413,35 @@ def render_timeline(companies=None):
     events_df = pd.DataFrame(event_rows)
 
     # ------------------------------------------------------------------
+    # Volledige milestone-namen (geen afkortingen/codes) in de graph
+    # ------------------------------------------------------------------
+    FULL_STUDY_NAMES = {
+        'MRE': 'Mineral Resource Estimate',
+        'MRE_U': 'Mineral Resource Estimate (Update)',
+        'PEA': 'Preliminary Economic Assessment',
+        'PEA_U': 'Preliminary Economic Assessment (Update)',
+        'PFS': 'Pre-Feasibility Study',
+        'FS': 'Feasibility Study',
+        'FS_U': 'Feasibility Study (Update)',
+        'PoO_Submitted': 'Plan of Operations Submitted',
+        'PoO_Accepted': 'Plan of Operations Accepted',
+        'PoO_Approved': 'Plan of Operations Approved',
+        'NEPA_Start': 'NEPA Review Started',
+        'Final_EIS': 'Final Environmental Impact Statement',
+        'Final_EA': 'Final Environmental Assessment',
+        'Record of Decision': 'Record of Decision',
+        'FID': 'Final Investment Decision',
+        'FAST41_Transparency': 'FAST-41 Transparency Listing',
+        'FAST41_Covered': 'FAST-41 Covered Project',
+        'Fully_Permitted': 'Fully Permitted',
+    }
+
+    def _full_study(name):
+        return FULL_STUDY_NAMES.get(name, name)
+
+    events_df['Study'] = events_df['Study'].map(_full_study)
+
+    # ------------------------------------------------------------------
     # Historical vs planned/ongoing milestones: compute the split point
     # ------------------------------------------------------------------
     planned_events = events_df[events_df['Status'] == 'Future']
@@ -2048,32 +2449,40 @@ def render_timeline(companies=None):
     x_min_all = events_df['Date'].min()
     x_max_all = events_df['Date'].max()
 
-    # Sort studies for consistent y-axis ordering
-    study_order = ['MRE', 'MRE_U', 'PEA', 'PEA_U', 'PFS', 'FS', 'FS_U',
-                   'PoO_Submitted', 'PoO_Accepted', 'PoO_Approved',
-                   'NEPA_Start', 'Final_EIS', 'Final_EA',
-                   'Record of Decision', 'FID', 'FAST41_Transparency',
-                   'FAST41_Covered', 'Fully_Permitted',
-                   # Upcoming / futuristic milestones (2026 and later)
-                   'Pilot Operations', 'Second Recycling Facility',
-                   'DOE Grant Reinstatement', 'Definitive Feasibility Study',
-                   'Commercial Production (Phase 1)', 'BLM Comments on Draft PoO',
-                   'Finalize Mine Plan of Operations', 'Demonstration Plant Construction',
-                   'Strategic Partnering / Offtake', 'Sign MOUs with KIND & Hyundai',
-                   'Final Investment Decision', 'First Commercial Production',
-                   'Definitive Capital Estimate', 'Mechanical Completion (Phase 1)',
-                   'Commercial Production', 'Scaled-up Leach & Separation Testing',
-                   'Flowsheet Optimization', 'Defense Supply Chain Integration']
+    # Sort studies for consistent y-axis ordering (volledige namen)
+    study_order = [_full_study(s) for s in
+                   ['MRE', 'MRE_U', 'PEA', 'PEA_U', 'PFS', 'FS', 'FS_U',
+                    'PoO_Submitted', 'PoO_Accepted', 'PoO_Approved',
+                    'NEPA_Start', 'Final_EIS', 'Final_EA',
+                    'Record of Decision', 'FID', 'FAST41_Transparency',
+                    'FAST41_Covered', 'Fully_Permitted',
+                    # Upcoming / futuristic milestones (2026 and later)
+                    'Pilot Operations', 'Second Recycling Facility',
+                    'DOE Grant Reinstatement', 'Definitive Feasibility Study',
+                    'Commercial Production (Phase 1)', 'BLM Comments on Draft PoO',
+                    'Finalize Mine Plan of Operations', 'Demonstration Plant Construction',
+                    'Strategic Partnering / Offtake', 'Sign MOUs with KIND & Hyundai',
+                    'Final Investment Decision', 'First Commercial Production',
+                    'Definitive Capital Estimate', 'Mechanical Completion (Phase 1)',
+                    'Commercial Production', 'Scaled-up Leach & Separation Testing',
+                    'Flowsheet Optimization', 'Defense Supply Chain Integration']]
 
     existing_studies = [s for s in study_order if s in events_df['Study'].unique()]
     remaining_studies = [s for s in events_df['Study'].unique() if s not in existing_studies]
     y_order = existing_studies + remaining_studies
     y_order_rev = y_order[::-1]
 
-    colors = {'Commitment': '#F39C12', 'Expected': '#E74C3C', 'Actual': '#2E86C1', 'Planned': '#8E44AD'}
+    colors = {'Commitment': '#F39C12', 'Expected': '#E74C3C', 'Actual': '#2E86C1', 'Planned': '#9CA3AF'}
     symbols = {'Commitment': 'diamond-open', 'Expected': 'diamond-open', 'Actual': 'circle', 'Planned': 'triangle-up-open'}
     sizes = {'Commitment': 12, 'Expected': 12, 'Actual': 14, 'Planned': 14}
-    event_labels = {'Commitment': 'Commitment', 'Expected': 'Expected', 'Actual': 'Actual', 'Planned': 'Planned / Ongoing'}
+    # Begrijpelijke termen voor de legenda (kort + self-explanatory).
+    # De 'Expected date' is de beloofde leverdatum — vandaar 'Promised'.
+    event_labels = {
+        'Commitment': 'Announced',
+        'Expected': 'Promised',
+        'Actual': 'Delivered',
+        'Planned': 'Upcoming',
+    }
 
     fig = go.Figure()
 
@@ -2140,10 +2549,12 @@ def render_timeline(companies=None):
             sub = events_df[events_df['Event_Type'] == event_type]
             if sub.empty:
                 continue
+            # Study-namen staan op de y-as (links); de markers hoeven dus
+            # geen tekst mee te slepen — geen overlappende termen meer.
             fig.add_trace(go.Scatter(
                 x=sub['Date'],
                 y=sub['Study'],
-                mode='markers+text',
+                mode='markers',
                 name=event_labels.get(event_type, event_type),
                 marker=dict(
                     color=colors.get(event_type, '#95A5A6'),
@@ -2151,14 +2562,29 @@ def render_timeline(companies=None):
                     symbol=symbols.get(event_type, 'circle'),
                     line=dict(width=1.5, color='white')
                 ),
-                text=sub['Study'],
-                textposition='middle right',
-                textfont=dict(size=10, color='#2C3E50'),
                 hovertemplate=(
                     f'<b>%{{y}}</b><br>'
                     f'{event_labels.get(event_type, event_type)}: %{{x|%d-%m-%Y}}<extra></extra>'
                 ),
             ))
+
+    # ------------------------------------------------------------------
+    # Milestone-namen IN de graph (single view): één keer per rij, boven
+    # het eerste (linker) symbool van die rij — leesbaar, zonder overlap.
+    # ------------------------------------------------------------------
+    if not is_compare:
+        for study in y_order:
+            sub = events_df[events_df['Study'] == study]
+            if sub.empty:
+                continue
+            first = sub.sort_values('Date').iloc[0]
+            fig.add_annotation(
+                x=first['Date'], y=study,
+                yshift=18, xshift=-6, xanchor='left',
+                text=study,
+                showarrow=False,
+                font=dict(size=12, color='#2C3E50'),
+            )
 
     # Hide y-axis labels (study names shown via markers/text and tooltips)
     fig.update_layout(
@@ -2171,27 +2597,28 @@ def render_timeline(companies=None):
             y=1.02 if not is_compare else 1.05,
             xanchor='center',
             x=0.5,
-            font=dict(size=10)
+            font=dict(size=12)
         ),
         yaxis=dict(
             title=None,
-            tickfont=dict(size=10, color='#2C3E50'),
+            tickfont=dict(size=12, color='#2C3E50'),
             categoryorder='array',
             categoryarray=y_order_rev,
             tickmode='array',
-            ticktext=[''] * len(y_order_rev),
+            # Single view: milestone-namen staan IN de graph (boven het
+            # eerste symbool van elke rij), dus de as-labels blijven leeg.
+            # Compare mode: namen wél op de as (meerdere bedrijven per rij).
+            ticktext=(y_order_rev if is_compare else [''] * len(y_order_rev)),
             tickvals=[s for s in y_order_rev],
-            gridcolor='#ECF0F1',
-            gridwidth=1,
-            showticklabels=False,
+            showgrid=False,
+            showticklabels=is_compare,
+            automargin=True,
         ),
         xaxis=dict(
             title=None,
-            tickfont=dict(size=10),
+            tickfont=dict(size=12),
             tickformat='%b %Y',
-            gridcolor='#ECF0F1',
-            gridwidth=1,
-            showgrid=True,
+            showgrid=False,
         ),
         margin=dict(t=60, b=10, l=20, r=100),
         plot_bgcolor='white',
@@ -2209,19 +2636,22 @@ def render_timeline(companies=None):
     # study labels are not clipped at the plot edge.
     pad = (x_max_all - x_min_all) * 0.08
     right_pad = (x_max_all - x_min_all) * 0.25
-    fig.update_xaxes(range=[x_min_all - pad, x_max_all + pad + right_pad])
+    fig.update_xaxes(
+        range=[x_min_all - pad, x_max_all + pad + right_pad],
+        tickvals=_year_axis_ticks(x_min_all - pad, x_max_all + pad + right_pad),
+    )
 
     if split_date is not None:
         fig.add_vrect(
             x0=split_date, x1=x_max_all + pad,
-            fillcolor="rgba(142, 68, 173, 0.05)",
+            fillcolor="rgba(156, 163, 175, 0.06)",
             line_width=0,
             layer="below",
         )
         fig.add_vline(
             x=split_date,
             line_dash="dash",
-            line_color="#8E44AD",
+            line_color="#9CA3AF",
             line_width=1.5,
         )
 
@@ -2238,59 +2668,111 @@ def render_timeline(companies=None):
         )
 
     present_cols = [c for c in display_cols if c in timeline_df.columns]
-    st.dataframe(timeline_df[present_cols], use_container_width=True, hide_index=True)
+    # The expander itself is rendered later (just above Management Due
+    # Diligence, after Quarterly Cash) via render_data_expanders(); here
+    # we only prepare + store its contents.
+    st.session_state["milestone_detail"] = {
+        "timeline_df": timeline_df[present_cols],
+        "companies": companies,
+        "is_compare": is_compare,
+    }
 
-    # ====================================================================
-    # COMMITMENT SENTENCES (uitklapbaar, compact)
-    # ====================================================================
-    for company in companies:
-        rows = TIMELINE_DATA.get(company, [])
-        if not rows:
-            continue
 
-        has_evidence = any(
-            r.get('Commitment Evidence', '—') != '—' or
-            r.get('Expected Evidence', '—') != '—'
-            for r in rows
-        )
-        if not has_evidence:
-            continue
+def render_data_expanders():
+    """Render the two detail expanders (studies data table + milestone
+    dates/evidence) BELOW Quarterly Cash, just above Management Due
+    Diligence — so they don't interrupt the aligned date-based charts."""
+    detail = st.session_state.get("milestone_detail")
 
-        with st.expander(f"Commitment sentences — {company}"):
-            for r in rows:
-                commitment_evidence = r.get('Commitment Evidence', '—')
-                expected_evidence = r.get('Expected Evidence', '—')
+    # 1. Value Ratios detailed table (stored by render_studies)
+    ratios = st.session_state.get("studies_detail_ratios")
+    if ratios is not None:
+        with st.expander("View detailed data table", expanded=False):
+            track_expander_open("View detailed data table")
+            st.dataframe(ratios[1], use_container_width=True, hide_index=True)
 
-                if commitment_evidence == '—' and expected_evidence == '—':
+    # 3. YouTube video table (stored by render_sentiment_analysis)
+    yt_table = st.session_state.get("youtube_video_table")
+    if yt_table is not None:
+        with st.expander("YouTube videos — show table", expanded=False):
+            st.dataframe(
+                yt_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Date": st.column_config.TextColumn("Date", width="small"),
+                    "Title": st.column_config.TextColumn("Title", width="large"),
+                    "Channel": st.column_config.TextColumn("Channel", width="medium"),
+                    "Duration": st.column_config.TextColumn("Duration", width="small"),
+                    "Views": st.column_config.NumberColumn("Views", format="%d", width="small"),
+                    "URL": st.column_config.LinkColumn("Video", display_text="Watch ▶", width="small"),
+                },
+            )
+
+    # 2. Milestone dates, delays & commitment evidence (stored by render_timeline)
+    if detail is not None:
+        with st.expander("Dates, delays & commitment evidence", expanded=False):
+            timeline_df = detail["timeline_df"]
+            companies = detail["companies"]
+            is_compare = detail["is_compare"]
+
+            st.dataframe(timeline_df, use_container_width=True, hide_index=True)
+
+            st.markdown("")  # spacing between table and evidence
+
+            # ================================================================
+            # COMMITMENT SENTENCES (in dezelfde expander)
+            # ================================================================
+            for company in companies:
+                rows = TIMELINE_DATA.get(company, [])
+                if not rows:
                     continue
 
-                study = r.get('Study', '')
-                commitment_date = r.get('Commitment date', '—')
-                expected_date = r.get('Expected date', '—')
-                actual_date = r.get('Actual date', '—')
-                delay = r.get('Delay', '—')
+                has_evidence = any(
+                    r.get('Commitment Evidence', '—') != '—' or
+                    r.get('Expected Evidence', '—') != '—'
+                    for r in rows
+                )
+                if not has_evidence:
+                    continue
 
-                # Compact header line per milestone
-                label_parts = [f"**{study}**"]
-                if commitment_date != '—':
-                    label_parts.append(f"commitment {commitment_date}")
-                if expected_date != '—':
-                    label_parts.append(f"expected {expected_date}")
-                if actual_date != '—':
-                    label_parts.append(f"actual {actual_date}")
-                if delay != '—':
-                    label_parts.append(f"delay {delay}")
-                st.markdown(" • ".join(label_parts))
+                if is_compare:
+                    st.markdown(f"#### Commitment sentences — {company}")
 
-                if commitment_evidence != '—':
-                    st.markdown(f"> “{commitment_evidence}”")
+                for r in rows:
+                    commitment_evidence = r.get('Commitment Evidence', '—')
+                    expected_evidence = r.get('Expected Evidence', '—')
 
-                if expected_evidence != '—':
-                    st.caption(f"Expected evidence: “{expected_evidence}”")
+                    if commitment_evidence == '—' and expected_evidence == '—':
+                        continue
 
-                st.markdown("")
+                    study = r.get('Study', '')
+                    commitment_date = r.get('Commitment date', '—')
+                    expected_date = r.get('Expected date', '—')
+                    actual_date = r.get('Actual date', '—')
+                    delay = r.get('Delay', '—')
 
-            st.caption("Source: company press releases and disclosures (MVP demo).")
+                    # Compact header line per milestone
+                    label_parts = [f"**{study}**"]
+                    if commitment_date != '—':
+                        label_parts.append(f"commitment {commitment_date}")
+                    if expected_date != '—':
+                        label_parts.append(f"expected {expected_date}")
+                    if actual_date != '—':
+                        label_parts.append(f"actual {actual_date}")
+                    if delay != '—':
+                        label_parts.append(f"delay {delay}")
+                    st.markdown(" • ".join(label_parts))
+
+                    if commitment_evidence != '—':
+                        st.markdown(f"> “{commitment_evidence}”")
+
+                    if expected_evidence != '—':
+                        st.caption(f"Expected evidence: “{expected_evidence}”")
+
+                    st.markdown("")
+
+                st.caption("Source: company press releases and disclosures.")
 
 
 def apply_styles():
@@ -2379,7 +2861,50 @@ def apply_styles():
     .streamlit-expanderContent {
         padding-top: 0.5rem !important;
     }
-    
+
+    /* Collapse dead whitespace between the studies tabs (expander) and
+       the next section (Milestone Tracker): no empty spacer blocks exist
+       in the code, so strip the default element margins instead. */
+    [data-testid="stExpander"] {
+        margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    [data-testid="stTabs"] {
+        margin-bottom: 0 !important;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-panel"] {
+        padding-bottom: 0 !important;
+    }
+
+    /* GA4 tracking (streamlit_gtag) renders an invisible iframe per
+       tracking call; each iframe reserves ~26px of whitespace. Collapse
+       them to zero height — they are never meant to be visible. */
+    iframe.stCustomComponentV1 {
+        height: 0 !important;
+        min-height: 0 !important;
+        display: block !important;
+    }
+    [data-testid="stElementContainer"]:has(> div > iframe.stCustomComponentV1) {
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Hide the scrollbars Streamlit renders between/around Altair (Vega)
+       charts (e.g. the stacked Value Ratios panels): the charts fit the
+       container, the bars are dead clutter. */
+    [data-testid="stArrowVegaLiteChart"] > div,
+    .stAltairChart,
+    [class*="vega-embed"] {
+        overflow: hidden !important;
+        scrollbar-width: none !important;   /* Firefox */
+    }
+    [data-testid="stArrowVegaLiteChart"] > div::-webkit-scrollbar,
+    .stAltairChart::-webkit-scrollbar,
+    [class*="vega-embed"]::-webkit-scrollbar {
+        display: none !important;           /* Chrome / Edge / Safari */
+    }
+
     /* Clean up sidebar */
     .css-1d391kg {
         padding-top: 1rem !important;
@@ -2458,9 +2983,6 @@ def render_sentiment_analysis(companies=None):
         companies = list(COMPANIES.keys())
     is_compare = len(companies) > 1
 
-    st.subheader("Sentiment Analysis")
-    st.caption("YouTube interviews & coverage over time")
-
     # ------------------------------------------------------------------
     # Collect YouTube video records for the selected companies (config.py)
     # ------------------------------------------------------------------
@@ -2485,6 +3007,7 @@ def render_sentiment_analysis(companies=None):
 
     if not rows:
         st.info("No YouTube interview data available for the selected company(ies) yet.")
+        st.session_state.pop("youtube_video_table", None)
         return
 
     df = pd.DataFrame(rows)
@@ -2492,36 +3015,34 @@ def render_sentiment_analysis(companies=None):
     df = df.sort_values("Date", ascending=True).reset_index(drop=True)
 
     # ------------------------------------------------------------------
-    # 1. Video table (newest first)
+    # Time window: copy the Milestone Tracker's x-range exactly (same
+    # min/max event dates + same padding), so both charts align 1-on-1.
     # ------------------------------------------------------------------
-    table_df = df.copy()
-    table_df["Date"] = table_df["Date"].dt.strftime("%Y-%m-%d")
-    st.dataframe(
-        table_df[["Date", "Title", "Channel", "Duration", "Views", "URL"]],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Date": st.column_config.TextColumn("Date", width="small"),
-            "Title": st.column_config.TextColumn("Title", width="large"),
-            "Channel": st.column_config.TextColumn("Channel", width="medium"),
-            "Duration": st.column_config.TextColumn("Duration", width="small"),
-            "Views": st.column_config.NumberColumn("Views", format="%d", width="small"),
-            "URL": st.column_config.LinkColumn("Video", display_text="Watch ▶", width="small"),
-        },
-    )
+    x_domain, year_ticks = _milestone_x_domain(companies)
 
     # ------------------------------------------------------------------
-    # 2. Interview timeline chart: when (x-axis) × views (y-axis),
-    #    uniform blue bubbles (channel shown on hover)
+    # 1. Interview timeline chart: when (x-axis) × views (y-axis),
+    #    uniform blue bubbles (channel shown on hover), no gridlines.
+    #    Same year ticks (Jan 1st, every 2 years) as the Milestone
+    #    Tracker, so the date labels align exactly.
     # ------------------------------------------------------------------
-    st.markdown("**Interview Timeline — When & Views**")
+    st.markdown("**YouTube Videos**")
 
     chart = (
         alt.Chart(df)
         .mark_circle(opacity=0.75, stroke="white", strokeWidth=1, size=140, color="#1F77B4")
         .encode(
-            x=alt.X("Date:T", title=None, axis=alt.Axis(format="%b %Y")),
-            y=alt.Y("Views:Q", title="Views", scale=alt.Scale(zero=False)),
+            x=alt.X(
+                "Date:T",
+                title=None,
+                axis=alt.Axis(format="%b %Y", grid=False, values=year_ticks, labelFontSize=12),
+                scale=alt.Scale(zero=False, domain=x_domain) if x_domain else alt.Scale(zero=False),
+            ),
+            y=alt.Y("Views:Q", title="Views", scale=alt.Scale(zero=False),
+                    axis=alt.Axis(grid=False, orient="right",
+                                  titleAngle=0, titleAlign="right",
+                                  titleFontSize=13, titleFontWeight="bold",
+                                  titleX=38, titleY=-4)),
             tooltip=[
                 alt.Tooltip("Date:T", title="Date", format="%Y-%m-%d"),
                 alt.Tooltip("Title:N", title="Title"),
@@ -2534,64 +3055,17 @@ def render_sentiment_analysis(companies=None):
     )
     st.altair_chart(chart, use_container_width=True)
 
+    # ------------------------------------------------------------------
+    # 2. Video table (newest first) — collapsible detail.
+    #    The expander itself is rendered later (just above Management Due
+    #    Diligence, after Quarterly Cash) via render_data_expanders();
+    #    here we only prepare + store the table.
+    # ------------------------------------------------------------------
+    table_df = df.copy()
+    table_df["Date"] = table_df["Date"].dt.strftime("%Y-%m-%d")
+    st.session_state["youtube_video_table"] = table_df[["Date", "Title", "Channel", "Duration", "Views", "URL"]]
+
     if no_data:
         st.caption(f"No YouTube data yet for: {', '.join(no_data)}.")
 
 
-def _link_button(label, url):
-    """Render a small button-styled hyperlink."""
-    st.markdown(
-        f'<a href="{url}" target="_blank" '
-        'style="display:inline-block;padding:0.3rem 0.9rem;background:#FF4B4B;'
-        'color:white;border-radius:0.3rem;text-decoration:none;font-size:14px;'
-        f'font-weight:500;">{label}</a>',
-        unsafe_allow_html=True,
-    )
-
-
-def render_feedback_section():
-    """Compact contact options: LinkedIn, email, or leave a message."""
-    with st.expander("Leave feedback"):
-        track_expander_open("Leave feedback")
-
-        linkedin_url = st.secrets.get("LINKEDIN_URL", "")
-        feedback_email = get_feedback_email()
-
-        # Quick contact buttons
-        buttons = []
-        if linkedin_url:
-            buttons.append(("Connect on LinkedIn", linkedin_url))
-        if feedback_email:
-            buttons.append((
-                "Send an email",
-                f"mailto:{feedback_email}?subject=Feedback%20Lithium%20Project%20Comparison",
-            ))
-
-        if buttons:
-            cols = st.columns(len(buttons))
-            for col, (label, url) in zip(cols, buttons):
-                with col:
-                    _link_button(label, url)
-
-        # Or leave a message directly
-        if buttons:
-            st.markdown("**Or leave a message:**")
-        message = st.text_area(
-            "Your message",
-            key="feedback_message",
-            placeholder="What works well, what's missing, what should I improve?",
-            height=100,
-            label_visibility="collapsed" if buttons else "visible",
-        )
-
-        # No minimum length: any message is accepted (empty clicks are ignored)
-        if st.button("Send message", key="feedback_submit") and message.strip():
-            ok, channel = send_feedback(message)
-            track_event("feedback_submit", {"channel": channel})
-            if ok:
-                if channel == "local":
-                    st.success("Thanks! Your message has been recorded.")
-                else:
-                    st.success("Thanks! Your message has been sent.")
-            else:
-                st.error("Could not send your message right now. Please try again later.")

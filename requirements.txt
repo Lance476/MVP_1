@@ -8,3 +8,4 @@ requests
 plotly
 streamlit-google-analytics-tag
 streamlit-cookies-controller
+playwright

@@ -77,7 +77,11 @@ STOCK_CLUSTERS = {
     # 🇺🇸 USA
     # =========================
 
-    "Nevada Juniors": {
+    # US-project juniors die noteren buiten de NYSE/NASDAQ:
+    # American Lithium (Tonopah Flats, NV) noteert op TSX-V,
+    # Anson Resources (Paradox Basin, UT) en Jindalee Lithium
+    # (McDermitt, OR) noteren op de ASX.
+    "USA Juniors": {
         "label": "USA",
         "members": {
             "Lithium Americas": "LAC",
@@ -85,6 +89,9 @@ STOCK_CLUSTERS = {
             "Ioneer": "IONR",
             "Century Lithium": "LCE.V",
             "Surge Battery Metals": "NILIF",
+            "American Lithium": "LI.V",
+            "Anson Resources": "ASN.AX",
+            "Jindalee Lithium Resources": "JLL.AX",
         }
     },
 
@@ -101,6 +108,8 @@ STOCK_CLUSTERS = {
             "Lithium Ionic": "LTH.V",
             "E3 Lithium": "ETL",
             "Rock Tech Lithium": "RCK.V",
+            "Critical Elements Lithium": "CRE.V",
+            "Li-FT Power": "LIFT.V",
         }
     },
 
@@ -115,6 +124,13 @@ STOCK_CLUSTERS = {
             "Lake Resources": "LKE.AX",
             "Lithium Argentina": "LAR.TO",
             "Lithium Chile": "LITH.V",
+            "NOA Lithium Brines": "NOAL.V",
+            # Lithium South Development (LIS.V) is in april 2026 gedelisted
+            # van de TSX-V (Hombre Muerto North verkocht, arrangement
+            # afgerond); de OTC-ticker LISSF heeft ook geen quote meer.
+            # Vervanger: Argentina Lithium & Energy (LIT.V), nog actieve
+            # TSX-V brine junior met projecten in Salta/Catamarca.
+            "Argentina Lithium & Energy": "LIT.V",
         }
     },
 
@@ -128,6 +144,7 @@ STOCK_CLUSTERS = {
             "Delta Lithium": "DLI.AX",
             "Core Lithium": "CXO.AX",
             "Liontown Resources": "LTR.AX",
+            "Wildcat Resources": "WC8.AX",
         }
     },
 
@@ -140,6 +157,11 @@ STOCK_CLUSTERS = {
         "members": {
             "Atlas Lithium": "ATLX",
             "Sigma Lithium": "SGML",
+            # Latin Resources (LRS.AX) is overgenomen door Pilbara Minerals
+            # en begin 2025 van de ASX gehaald; LRS.AX retourneert 404.
+            # Vervanger: Viridis Mining & Minerals (VMM.AX), actieve ASX
+            # junior met lithiumprojecten in Minas Gerais (Brazilië).
+            "Viridis Mining & Minerals": "VMM.AX",
         }
     },
 
@@ -167,6 +189,7 @@ STOCK_CLUSTERS = {
             "Vulcan Energy": "VUL.AX",
             "Savannah Resources": "SAV.L",
             "European Metals Holdings": "EMH.L",
+            "Zinnwald Lithium": "ZNWD.L",
         }
     },
 }
@@ -191,44 +214,6 @@ TIME_PERIODS = [
 DEFAULT_TIME_PERIOD = "1D"
 
 # ============================================================================
-# GOOGLE ADS SEARCH VOLUME (per company, monthly)
-# ============================================================================
-# Monthly Google Ads search volume for each company's brand terms, plus two
-# sector-wide benchmarks ("lithium stocks" and "Nevada Lithium") that are
-# shown alongside every company's own line in the search-volume chart.
-# ============================================================================
-SEARCH_DATA = {
-    "Lithium Americas": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
-        "values": [4400, 33100, 27100, 8100, 4400, 8100, 4400, 4400, 4400, 5400, 5400, 3600],
-    },
-    "American Battery Technology": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
-        "values": [880, 1300, 5400, 1900, 1000, 1000, 880, 480, 590, 1000, 880, 590],
-    },
-    "Ioneer": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
-        "values": [720, 880, 1300, 590, 880, 880, 1900, 1000, 720, 480, 720, 720],
-    },
-    "Century Lithium": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
-        "values": [140, 140, 260, 140, 170, 320, 320, 260, 170, 140, 170, 140],
-    },
-    "Surge Battery Metals": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026", "7/2026"],
-        "values": [110, 140, 480, 210, 210, 320, 260, 170, 170, 210, 260, 170],
-    },
-    "lithium stocks": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026"],
-        "values": [5400, 8100, 12100, 3600, 3600, 6600, 4400, 3600, 3600, 4400, 2900],
-    },
-    "Nevada Lithium": {
-        "months": ["8/2025", "9/2025", "10/2025", "11/2025", "12/2025", "1/2026", "2/2026", "3/2026", "4/2026", "5/2026", "6/2026"],
-        "values": [390, 480, 590, 390, 390, 480, 2900, 480, 320, 390, 320],
-    },
-}
-
-# ============================================================================
 # STUDY STAGE LABELS & ORDER
 # ============================================================================
 STAGE_ORDER = ['MRE', 'MRE_U', 'PEA', 'PEA_U', 'PFS', 'FS', 'FS_U', 'FP', 'FID']
@@ -248,7 +233,7 @@ STAGE_SHORT_MAP = {
 # STUDY DATA (per company)
 # ============================================================================
 # NOTE: Study economics are best-effort public figures and should be verified
-# against the underlying technical reports. The UI labels the app as MVP demo.
+# against the underlying technical reports.
 # ============================================================================
 
 STUDY_COLUMNS = [

@@ -25,12 +25,14 @@ from views import (
     apply_styles,
     render_comparison_snapshot,
     render_dashboard,
-    render_feedback_section,
     render_qa_section,
     render_search_analysis,
     render_sentiment_analysis,
+    render_data_expanders,
     render_sidebar,
     render_stock_chart,
+    render_lithium_futures,
+    render_top_mover_hook,
     render_studies,
     render_cash_overview,
     render_timeline,
@@ -127,8 +129,8 @@ with st.container():
 
     # --- PITCH TITLE + SECTIONS ("newsroom" order: live -> search -> events -> reference) ---
     # Returning visitors come for what CHANGED (price, catalysts), so the
-    # dynamic layers sit above the fold; the static reference library and the
-    # feedback ask sit at the bottom, after value has been delivered.
+    # dynamic layers sit above the fold; the static reference library sits at
+    # the bottom, after value has been delivered.
 
     st.markdown(
         "<h1 style='text-align:center; font-weight:300; font-size:2.0rem; "
@@ -139,11 +141,22 @@ with st.container():
         "Junior Lithium Developers</p>",
         unsafe_allow_html=True)
 
+    # Hook: subtiele balk net onder de titel — meteen duidelijk waar het beweegt.
+    render_top_mover_hook(selected_companies)
+
     # 1. LIVE — price layer: the daily reason to come back
     render_dashboard(selected_companies)
     st.markdown("")
 
     st.markdown("")
+
+    # 1a. LITHIUM PRICE + FUTURES — unique content, directly under the
+    #     rankings: links de "Lithium Price" (huidige/verleden), rechts de
+    #     futures term structure (live scrape, 1 uur cache).
+    #     Titels staan per kolom in render_lithium_futures (views.py).
+    render_lithium_futures()
+    st.markdown("")
+
     render_stock_chart(selected_companies)
     st.markdown("")
 
@@ -152,13 +165,14 @@ with st.container():
         render_comparison_snapshot(selected_companies)
         st.markdown("")
 
-    # 3. SEARCH — Google Trends teaser + Google Ads Search Volume,
+    # 3. SEARCH — Google Trends teaser + interest over time,
     #    directly after the price charts (attention layer first)
     st.subheader("Google Trends")
     render_search_analysis(selected_companies)
     st.markdown("")
 
-    # 4. EVENTS — upcoming catalysts/permits: the event-driven return trigger
+    # 4. STUDIES → MILESTONES → ATTENTION → CASH (storytelling order)
+    render_studies(selected_companies)
     render_timeline(selected_companies)
     st.markdown("")
 
@@ -169,18 +183,18 @@ with st.container():
     render_cash_overview(selected_companies)
     st.markdown("")
 
-    # 6. REFERENCE — static study economics & value ratios
-    render_studies(selected_companies)
+    # Detail expanders (studies table + milestone dates/evidence) sit below
+    # Quarterly Cash, just above Management Due Diligence, so they no longer
+    # interrupt the aligned date-based charts above.
+    render_data_expanders()
     st.markdown("")
 
-    # 7. COMMUNITY — Q&A first, feedback ask last (post-value conversion)
+    # 7. COMMUNITY — Management Due Diligence Q&A
     st.subheader("Management Due Diligence")
     st.markdown("")
 
     render_qa_section()
     st.markdown("")
 
-    # Feedback form: visitors can leave a comment that is sent to the owner
-    render_feedback_section()
-
 # python -m streamlit run app.py
+# python -m streamlit run app.py --server.runOnSave true

@@ -3,6 +3,8 @@
 Annual_Financials.csv
 Stock_Daily_Combined.csv
 analytics.json
+# Runtime scrape caches (regenerated locally, never commit stale scrapes)
+lithium_*.csv
 __pycache__/
 *.pyc
 venv/
